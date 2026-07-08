@@ -16,28 +16,39 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.categories import categories_keyboard
 from bot.config import settings
-from bot.keyboards import BTN_ADMIN, BTN_BRANDS, BTN_HELP, BTN_PROFILE, main_menu, profile_edit_keyboard
+from bot.keyboards import (
+    BTN_ADMIN,
+    BTN_BRANDS,
+    BTN_HELP,
+    BTN_MY_APPS,
+    BTN_PROFILE,
+    BTN_SHARE_CONTACT,
+    contact_request_keyboard,
+    main_menu,
+    profile_edit_keyboard,
+)
 from bot.sheets import SheetsError, sheets_client
 from bot.states import Registration
-from bot.utils.chat_cleanup import render_screen, send_persistent_menu
+from bot.utils.chat_cleanup import ensure_menu, render_screen, reset_menu
 from bot.utils.db_helpers import get_creator_by_tg_id, upsert_creator
 
 logger = logging.getLogger(__name__)
 router = Router(name="registration")
 
+_MENU_BTNS = [BTN_PROFILE, BTN_BRANDS, BTN_MY_APPS, BTN_HELP, BTN_ADMIN]
+
 STEP_PROMPTS = {
-    Registration.telegram_contact: "Твой контакт в Telegram (с @)?",
     Registration.instagram: "Ссылка на Instagram (или другую соцсеть с примерами работ)?",
     Registration.other_socials: "Другие соцсети (TikTok/YouTube и т.д.)? Если нет — напиши «нет».",
     Registration.rate: "Желаемая оплата за 1 ролик под ключ?",
     Registration.portfolio: "Ссылка на портфолио/примеры работ?",
     Registration.age: "Сколько тебе лет?",
     Registration.city: "В каком городе живёшь?",
-    Registration.phone: "Номер телефона (с 8)?",
 }
 
+# Порядок шагов (для вычисления следующего). Telegram больше НЕ спрашиваем — берём
+# @username автоматически. Телефон — отдельным шагом через «Поделиться контактом».
 STEP_ORDER = [
-    Registration.telegram_contact,
     Registration.instagram,
     Registration.other_socials,
     Registration.rate,
@@ -48,8 +59,17 @@ STEP_ORDER = [
     Registration.categories,
 ]
 
+# Текстовые шаги, которые обрабатывает _generic_step (без phone и categories).
+TEXT_STEPS = [
+    Registration.instagram,
+    Registration.other_socials,
+    Registration.rate,
+    Registration.portfolio,
+    Registration.age,
+    Registration.city,
+]
+
 FIELD_BY_STATE = {
-    Registration.telegram_contact: "telegram",
     Registration.instagram: "instagram",
     Registration.other_socials: "other_socials",
     Registration.rate: "rate",
@@ -60,11 +80,13 @@ FIELD_BY_STATE = {
 }
 
 
-@router.message(Registration.full_name, ~F.text.in_([BTN_PROFILE, BTN_BRANDS, BTN_HELP, BTN_ADMIN]))
+@router.message(Registration.full_name, ~F.text.in_(_MENU_BTNS))
 async def step_full_name(message: Message, state: FSMContext, bot: Bot):
-    await state.update_data(full_name=message.text.strip())
-    await state.set_state(Registration.telegram_contact)
-    await render_screen(bot, message.chat.id, STEP_PROMPTS[Registration.telegram_contact], delete_trigger=message)
+    # Telegram считываем автоматически из профиля — не спрашиваем отдельно.
+    telegram = f"@{message.from_user.username}" if message.from_user.username else ""
+    await state.update_data(full_name=message.text.strip(), telegram=telegram)
+    await state.set_state(Registration.instagram)
+    await render_screen(bot, message.chat.id, STEP_PROMPTS[Registration.instagram], delete_trigger=message)
 
 
 def _next_state(current) -> "State | None":
@@ -72,29 +94,54 @@ def _next_state(current) -> "State | None":
     return STEP_ORDER[idx + 1] if idx + 1 < len(STEP_ORDER) else None
 
 
+async def _ask_phone(chat_id: int, state: FSMContext, bot: Bot, trigger: Message | None) -> None:
+    await state.set_state(Registration.phone)
+    await render_screen(
+        bot,
+        chat_id,
+        "📱 Оставь номер телефона: нажми «Поделиться контактом» ниже или введи вручную.",
+        reply_markup=contact_request_keyboard(),
+        delete_trigger=trigger,
+    )
+
+
 async def _generic_step(message: Message, state: FSMContext, bot: Bot):
     current = await state.get_state()
-    from bot.states import Registration as R
-
     current_enum = next(s for s in STEP_ORDER if s.state == current)
     field = FIELD_BY_STATE[current_enum]
     await state.update_data(**{field: message.text.strip()})
 
     nxt = _next_state(current_enum)
-    if nxt is None:
+    if nxt == Registration.phone:
+        await _ask_phone(message.chat.id, state, bot, message)
+    elif nxt == Registration.categories or nxt is None:
         await _show_categories(message.chat.id, state, bot, message)
-        return
+    else:
+        await state.set_state(nxt)
+        await render_screen(bot, message.chat.id, STEP_PROMPTS[nxt], delete_trigger=message)
 
-    await state.set_state(nxt)
-    await render_screen(bot, message.chat.id, STEP_PROMPTS[nxt], delete_trigger=message)
+
+for _state in TEXT_STEPS:
+    router.message.register(_generic_step, _state, ~F.text.in_(_MENU_BTNS))
 
 
-for _state in STEP_ORDER[:-1]:  # все, кроме categories (у неё инлайн-кнопки, не текст)
-    router.message.register(
-        _generic_step,
-        _state,
-        ~F.text.in_([BTN_PROFILE, BTN_BRANDS, BTN_HELP, BTN_ADMIN])
-    )
+async def _after_phone(chat_id: int, state: FSMContext, bot: Bot, trigger: Message, tg_id: int) -> None:
+    # Контакт-клавиатура заменила основное меню — возвращаем его на место.
+    reset_menu(chat_id)
+    await ensure_menu(bot, chat_id, main_menu(settings.is_admin(tg_id)))
+    await _show_categories(chat_id, state, bot, trigger)
+
+
+@router.message(Registration.phone, F.contact)
+async def phone_via_contact(message: Message, state: FSMContext, bot: Bot):
+    await state.update_data(phone=message.contact.phone_number)
+    await _after_phone(message.chat.id, state, bot, message, message.from_user.id)
+
+
+@router.message(Registration.phone, F.text, ~F.text.in_(_MENU_BTNS + [BTN_SHARE_CONTACT]))
+async def phone_via_text(message: Message, state: FSMContext, bot: Bot):
+    await state.update_data(phone=message.text.strip())
+    await _after_phone(message.chat.id, state, bot, message, message.from_user.id)
 
 
 async def _show_categories(chat_id: int, state: FSMContext, bot: Bot, trigger: Message | None = None):
@@ -174,19 +221,37 @@ async def submit(call: CallbackQuery, state: FSMContext, bot: Bot):
     chat_id = call.message.chat.id
     tg_id = call.from_user.id
 
+    logger.info(f"Registration submit for user {tg_id}: {data.get('full_name')}")
     await call.answer("Отправляю...")
     await render_screen(bot, chat_id, "⏳ Сохраняю анкету...")
 
+    # 1. Проверь есть ли уже в локальной БД
     existing = await get_creator_by_tg_id(tg_id)
     is_edit = existing is not None and existing.sheet_row is not None
+    sheet_row = existing.sheet_row if is_edit else None
 
+    # 2. Если нет sheet_row, сначала ищем в Google Sheets (ПЕРЕД отправкой!)
+    if sheet_row is None:
+        try:
+            lookup = await sheets_client.lookup(data.get("telegram", ""), data.get("full_name", ""))
+            if lookup.found:
+                sheet_row = lookup.row
+                is_edit = True  # найдено в таблице = нужно обновлять, а не добавлять
+        except SheetsError as e:
+            logger.warning("lookup failed (non-fatal): %s", e)
+
+    # 3. Теперь отправляй в Google Sheets (обновляй или добавляй)
     try:
-        if is_edit:
-            # Правим существующую строку, а не плодим дубликат (критерий #4:
-            # "разрешить редактировать их существующую строку").
-            await sheets_client.update_row(existing.sheet_row, data, chat_id=chat_id)
+        logger.info(f"Saving to sheets: is_edit={is_edit}, sheet_row={sheet_row}")
+        if is_edit and sheet_row is not None:
+            # Правим существующую строку, а не плодим дубликат
+            logger.info(f"Updating row {sheet_row}")
+            await sheets_client.update_row(sheet_row, data, chat_id=chat_id)
         else:
-            await sheets_client.register_creator(data, chat_id=chat_id)
+            # Новая регистрация
+            logger.info("Creating new row")
+            result = await sheets_client.register_creator(data, chat_id=chat_id)
+            logger.info(f"Register result: {result}")
     except SheetsError as e:
         logger.error("register/update failed: %s", e)
         await render_screen(
@@ -195,15 +260,7 @@ async def submit(call: CallbackQuery, state: FSMContext, bot: Bot):
         await state.clear()
         return
 
-    sheet_row = existing.sheet_row if is_edit else None
-    if sheet_row is None:
-        try:
-            lookup = await sheets_client.lookup(data.get("telegram", ""), data.get("full_name", ""))
-            if lookup.found:
-                sheet_row = lookup.row
-        except SheetsError:
-            pass
-
+    # 4. Сохрани в локальной БД с sheet_row
     await upsert_creator(tg_id, username=call.from_user.username, fields=data, sheet_row=sheet_row)
     await state.clear()
 
@@ -213,4 +270,3 @@ async def submit(call: CallbackQuery, state: FSMContext, bot: Bot):
         "🎉 Готово! Анкета сохранена. Мы на связи, если появятся подходящие проекты.",
         reply_markup=profile_edit_keyboard(),
     )
-    await send_persistent_menu(bot, chat_id, "Меню всегда под рукой 👇", main_menu(settings.is_admin(tg_id)))

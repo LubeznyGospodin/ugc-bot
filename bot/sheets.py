@@ -85,26 +85,61 @@ class Brand:
         )
 
 
+@dataclass
+class Application:
+    """Один отклик креатора на бренд со статусом рассмотрения."""
+
+    brand_title: str
+    status: str  # "на рассмотрении" | "отказ" | "оффер"
+    date: str = ""
+    reason: str = ""  # причина (обычно для статуса "отказ")
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, Any]) -> "Application":
+        return cls(
+            brand_title=str(payload.get("brand_title") or payload.get("brand") or ""),
+            status=(str(payload.get("status") or "на рассмотрении")).strip().lower(),
+            date=str(payload.get("date") or ""),
+            reason=str(payload.get("reason") or ""),
+        )
+
+
 class SheetsClient:
     """Тонкая обёртка над одним POST-эндпоинтом Apps Script."""
 
-    def __init__(self, webhook_url: str | None = None, secret: str | None = None, timeout: int = 15):
+    def __init__(self, webhook_url: str | None = None, secret: str | None = None, timeout: int = 8):
         self.webhook_url = webhook_url or settings.sheets_webhook_url
         self.secret = secret or settings.sheets_webhook_secret
-        self.timeout = aiohttp.ClientTimeout(total=timeout)
+        # Жестче таймаут: 8 сек (было 10, еще жестче connect/read)
+        self.timeout = aiohttp.ClientTimeout(total=timeout, sock_connect=3, sock_read=3)
 
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
         if not self.webhook_url:
             raise SheetsError("SHEETS_WEBHOOK_URL не задан")
         body = {"secret": self.secret, **payload}
-        try:
-            async with aiohttp.ClientSession(timeout=self.timeout) as session:
-                async with session.post(self.webhook_url, json=body) as resp:
-                    text = await resp.text()
-                    if resp.status != 200:
-                        raise SheetsError(f"HTTP {resp.status}: {text[:200]}")
-        except aiohttp.ClientError as e:
-            raise SheetsError(f"Сетевая ошибка: {e}") from e
+        # Ретрай: холодный старт Apps Script часто роняет первый запрос по таймауту.
+        # Вторая попытка идёт уже по «прогретому» эндпоинту — так «работает через раз»
+        # превращается в «работает с первого раза» для пользователя.
+        import asyncio as _asyncio
+
+        text = None
+        last_exc: Exception | None = None
+        for attempt in range(2):
+            try:
+                async with aiohttp.ClientSession(timeout=self.timeout) as session:
+                    async with session.post(self.webhook_url, json=body) as resp:
+                        text = await resp.text()
+                        if resp.status != 200:
+                            raise SheetsError(f"HTTP {resp.status}: {text[:200]}")
+                break
+            except (aiohttp.ClientError, _asyncio.TimeoutError) as e:
+                last_exc = e
+                if attempt == 0:
+                    await _asyncio.sleep(0.4)
+                    continue
+                raise SheetsError(f"Сетевая ошибка: {e}") from e
+        if text is None:
+            raise SheetsError(f"Сетевая ошибка: {last_exc}")
         import json as _json
 
         try:
@@ -136,10 +171,72 @@ class SheetsClient:
         payload = await self._post({"action": "stats"})
         return StatsResult.from_payload(payload)
 
-    async def brands(self) -> list[Brand]:
+    async def all_creators(self) -> list[dict[str, Any]]:
+        """Все креаторы с заполненным Chat ID (для bulk-синка в БД)."""
+        payload = await self._post({"action": "all_creators"})
+        items = payload if isinstance(payload, list) else payload.get("items", [])
+        return [i for i in items if isinstance(i, dict)]
+
+    async def all_applications(self) -> list[dict[str, Any]]:
+        """Все отклики (для bulk-синка в БД)."""
+        payload = await self._post({"action": "all_applications"})
+        items = payload if isinstance(payload, list) else payload.get("items", [])
+        return [i for i in items if isinstance(i, dict)]
+
+    async def profile(self, chat_id: int) -> dict[str, Any] | None:
+        """Живой профиль креатора из таблицы по Chat ID (action=profile).
+        Apps Script читает строку по колонке «Chat ID» и отдаёт поля по ЗАГОЛОВКАМ
+        (устойчиво к добавлению/удалению столбцов). None — если строки нет."""
+        payload = await self._post({"action": "profile", "chat_id": chat_id})
+        if isinstance(payload, dict) and payload.get("found"):
+            return payload.get("data") or {}
+        return None
+
+    _brands_cache: "tuple[float, list[Brand]] | None" = None
+
+    async def brands(self, ttl: float = 30.0) -> list[Brand]:
+        # Короткий кэш: листание карточек и отклик не бьют по webhook повторно.
+        # Бренды в таблице меняются редко, 30с задержки допустимы.
+        import time as _time
+
+        now = _time.monotonic()
+        cached = SheetsClient._brands_cache
+        if cached and (now - cached[0]) < ttl:
+            return cached[1]
         payload = await self._post({"action": "brands"})
         items = payload if isinstance(payload, list) else payload.get("items", [])
-        return [Brand.from_payload(item) for item in items]
+        result = [Brand.from_payload(item) for item in items]
+        SheetsClient._brands_cache = (now, result)
+        return result
+
+    async def apply(
+        self,
+        brand_id: str,
+        brand_title: str,
+        name: str,
+        telegram: str,
+        chat_id: int,
+    ) -> bool:
+        """Записать отклик креатора на бренд (регистрация на бренд) — action=apply,
+        Apps Script дописывает строку на вкладку "Отклики"."""
+        payload = await self._post(
+            {
+                "action": "apply",
+                "brand_id": brand_id,
+                "brand_title": brand_title,
+                "name": name,
+                "telegram": telegram,
+                "chat_id": chat_id,
+            }
+        )
+        return bool(payload.get("ok"))
+
+    async def my_applications(self, chat_id: int) -> list[Application]:
+        """Отклики конкретного креатора со статусом — action=my_applications,
+        Apps Script читает вкладку "Отклики", фильтр по Chat ID."""
+        payload = await self._post({"action": "my_applications", "chat_id": chat_id})
+        items = payload if isinstance(payload, list) else payload.get("items", [])
+        return [Application.from_payload(item) for item in items]
 
 
 sheets_client = SheetsClient()

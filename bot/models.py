@@ -38,3 +38,31 @@ class Creator(Base):
     categories: Mapped[str | None] = mapped_column(String(255), nullable=True)
     sheet_row: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class CachedBrand(Base):
+    """Зеркало вкладки «Бренды» — чтобы список/карточки брендов читались из БД
+    мгновенно, а не через webhook на каждый тап. Обновляется фоновым синком."""
+
+    __tablename__ = "cached_brands"
+
+    brand_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    title: Mapped[str] = mapped_column(String(255), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    category: Mapped[str] = mapped_column(String(255), default="")
+    synced_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class CachedApplication(Base):
+    """Зеркало вкладки «Отклики» — «Мои отклики» читаются из БД мгновенно."""
+
+    __tablename__ = "cached_applications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    brand_title: Mapped[str] = mapped_column(String(255), default="")
+    status: Mapped[str] = mapped_column(String(64), default="на рассмотрении")
+    reason: Mapped[str] = mapped_column(Text, default="")
+    date: Mapped[str] = mapped_column(String(32), default="")
+    synced_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

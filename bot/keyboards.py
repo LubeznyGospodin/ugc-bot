@@ -18,16 +18,32 @@ from aiogram.types import (
 
 from bot.sheets import Brand
 
-BTN_PROFILE = "👤 Моя анкета"
-BTN_BRANDS = "📢 Запросы брендов"
-BTN_HELP = "❓ Помощь"
-BTN_ADMIN = "⚙️ Админка"
+# Поля анкеты, которые можно править точечно (ключ данных -> подпись кнопки).
+EDITABLE_FIELDS: list[tuple[str, str]] = [
+    ("full_name", "Имя"),
+    ("instagram", "Instagram"),
+    ("other_socials", "Другие соцсети"),
+    ("rate", "Оплата"),
+    ("portfolio", "Портфолио"),
+    ("age", "Возраст"),
+    ("city", "Город"),
+    ("phone", "Телефон"),
+    ("category", "Категории"),
+]
+
+BTN_SHARE_CONTACT = "📱 Поделиться контактом"
+
+BTN_PROFILE = "🧾 Моя анкета"
+BTN_BRANDS = "🎯 Запросы брендов"
+BTN_MY_APPS = "📨 Мои отклики"
+BTN_HELP = "💬 Помощь"
+BTN_ADMIN = "🛠 Админка"
 
 
 def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
     rows = [
         [KeyboardButton(text=BTN_PROFILE), KeyboardButton(text=BTN_BRANDS)],
-        [KeyboardButton(text=BTN_HELP)],
+        [KeyboardButton(text=BTN_MY_APPS), KeyboardButton(text=BTN_HELP)],
     ]
     if is_admin:
         rows.append([KeyboardButton(text=BTN_ADMIN)])
@@ -55,13 +71,44 @@ def profile_edit_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def brands_list_keyboard(brands: list[Brand]) -> InlineKeyboardMarkup:
+def edit_fields_keyboard() -> InlineKeyboardMarkup:
+    """Меню «что скорректировать?» — по 2 поля в ряд + кнопка Готово."""
+    rows: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+    for i, (field, label) in enumerate(EDITABLE_FIELDS, start=1):
+        row.append(InlineKeyboardButton(text=label, callback_data=f"editf:{field}"))
+        if i % 2 == 0:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([InlineKeyboardButton(text="✅ Готово", callback_data="editf:done")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def contact_request_keyboard() -> ReplyKeyboardMarkup:
+    """Клавиатура «Поделиться контактом» — Telegram отдаёт номер телефона."""
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=BTN_SHARE_CONTACT, request_contact=True)]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+
+def brands_list_keyboard(
+    brands: list[Brand], hot_ids: set[str] | None = None
+) -> InlineKeyboardMarkup:
+    hot_ids = hot_ids or set()
     rows = [
-        [InlineKeyboardButton(text=b.title, callback_data=f"brand:{b.id}")]
+        [
+            InlineKeyboardButton(
+                text=(f"🔥 {b.title}" if b.id in hot_ids else b.title),
+                callback_data=f"brand:{b.id}",
+            )
+        ]
         for b in brands
     ]
-    if not rows:
-        rows = [[InlineKeyboardButton(text="Пока пусто, загляните позже", callback_data="brand:none")]]
+    # Если нет брендов, возвращаем пустую клавиатуру (без кнопок)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

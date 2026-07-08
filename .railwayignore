@@ -1,0 +1,6 @@
+.git
+__pycache__
+*.pyc
+data
+AGENT_LOG.md
+.DS_Store

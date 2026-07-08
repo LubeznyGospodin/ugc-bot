@@ -23,6 +23,12 @@ class Dedup(StatesGroup):
     waiting_confirmation = State()
 
 
+class EditField(StatesGroup):
+    """Точечная правка одного поля анкеты (меню «Обновить данные»)."""
+
+    waiting_value = State()
+
+
 class BroadcastFSM(StatesGroup):
     waiting_text = State()
     waiting_confirm = State()

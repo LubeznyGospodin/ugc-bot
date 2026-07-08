@@ -18,12 +18,12 @@ from sqlalchemy import select
 
 from bot.config import settings
 from bot.database import get_session
-from bot.keyboards import admin_menu_keyboard, broadcast_confirm_keyboard
+from bot.keyboards import BTN_ADMIN, admin_menu_keyboard, broadcast_confirm_keyboard
 from bot.models import Creator
 from bot.sheets import SheetsError, sheets_client
 from bot.states import BroadcastFSM
 from bot.utils.chat_cleanup import render_screen
-from bot.utils.db_helpers import count_creators
+from bot.utils.db_helpers import count_creators, db_stats
 from bot.utils.export import export_creators_xlsx
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ def _admin_only(user_id: int) -> bool:
 
 
 @router.message(Command("admin"))
-@router.message(F.text == "⚙️ Админка")
+@router.message(F.text == BTN_ADMIN)
 async def admin_menu(message: Message, bot: Bot):
     if not _admin_only(message.from_user.id):
         return
@@ -49,18 +49,16 @@ async def admin_stats(call: CallbackQuery, bot: Bot):
         return
     await call.answer()
 
-    local_count = await count_creators()
-    try:
-        sheet_stats = await sheets_client.stats()
-        sheet_line = (
-            f"Всего в таблице: {sheet_stats.total_creators}\n"
-            f"Есть в боте: {sheet_stats.in_bot}\n"
-            f"Нет в боте: {sheet_stats.not_in_bot}"
-        )
-    except SheetsError as e:
-        sheet_line = f"(не удалось получить данные таблицы: {e})"
-
-    text = f"📊 Аналитика\n\nЛокально знает бот: {local_count}\n\n{sheet_line}"
+    # Аналитика из БД — мгновенно, без похода в таблицу (раньше падало по таймауту).
+    s = await db_stats()
+    text = (
+        "📊 <b>Аналитика</b>\n\n"
+        f"👤 Креаторов в боте: <b>{s['creators']}</b>\n\n"
+        f"📨 Всего откликов: <b>{s['apps']}</b>\n"
+        f"• 🎉 Офферов: {s['offers']}\n"
+        f"• ❌ Отказов: {s['rejects']}\n"
+        f"• 🕐 На рассмотрении: {s['pending']}"
+    )
     await render_screen(bot, call.message.chat.id, text, reply_markup=admin_menu_keyboard())
 
 

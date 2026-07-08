@@ -28,7 +28,7 @@ from bot.config import settings
 from bot.keyboards import BTN_HELP, confirm_dedup_keyboard, main_menu, profile_edit_keyboard
 from bot.sheets import LookupResult, SheetsError, sheets_client
 from bot.states import Dedup
-from bot.utils.chat_cleanup import forget_screen, render_screen, send_persistent_menu
+from bot.utils.chat_cleanup import ensure_menu, forget_screen, render_screen
 from bot.utils.db_helpers import upsert_creator
 
 logger = logging.getLogger(__name__)
@@ -54,14 +54,26 @@ def _profile_summary(data: dict) -> str:
     )
 
 
-async def _run_lookup_animation(bot: Bot, chat_id: int, screen: Message) -> None:
-    frames = ["🔎 Ищу тебя в наших списках", "🔎 Ищу тебя в наших списках.", "🔎 Ищу тебя в наших списках.."]
-    for frame in frames:
+async def _run_lookup_animation(bot: Bot, chat_id: int, screen: Message, lookup_task) -> None:
+    # Крупная стильная анимация: тематический эмодзи + широкий прогресс-бар с
+    # процентами, который заполняется и заново заполняется, ПОКА идёт поиск.
+    STEPS = 10
+    faces = ["🔎", "🛰", "📡", "🔍"]
+    i = 0
+    while not (lookup_task.done() and i >= STEPS):
+        fill = (i % STEPS) + 1
+        bar = "▰" * fill + "▱" * (STEPS - fill)
+        pct = round(fill / STEPS * 100)
+        face = faces[i % len(faces)]
+        frame = f"{face} <b>Ищу тебя в базе…</b>\n\n<code>{bar}</code>  <b>{pct}%</b>"
         try:
             await bot.edit_message_text(frame, chat_id=chat_id, message_id=screen.message_id)
         except Exception:
             pass
-        await asyncio.sleep(0.4)
+        i += 1
+        if i >= 60:  # предохранитель ~18с
+            break
+        await asyncio.sleep(0.3)
 
 
 @router.message(CommandStart())
@@ -69,19 +81,35 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot):
     await state.clear()
     forget_screen(message.chat.id)
 
-    screen = await render_screen(bot, message.chat.id, "🔎 Ищу тебя в наших списках...", delete_trigger=message)
-    await _run_lookup_animation(bot, message.chat.id, screen)
+    # Нижнее меню ставим ОТДЕЛЬНЫМ сообщением-якорем (один раз на чат). Оно НЕ входит
+    # в цепочку render_screen, поэтому не удаляется при смене экранов — кнопки не
+    # пропадают (фикс бага «при узнавании всё удаляется»). И это не спам: одно сообщение.
+    await ensure_menu(bot, message.chat.id, main_menu(settings.is_admin(message.from_user.id)))
+
+    screen = await render_screen(
+        bot,
+        message.chat.id,
+        "📡 Ищу тебя в базе...",
+        delete_trigger=message,
+    )
 
     telegram_handle = f"@{message.from_user.username}" if message.from_user.username else ""
     full_name_guess = " ".join(
         filter(None, [message.from_user.first_name, message.from_user.last_name])
     )
 
-    try:
-        result = await sheets_client.lookup(telegram_handle, full_name_guess)
-    except SheetsError as e:
-        logger.warning("lookup failed: %s", e)
-        result = LookupResult(found=False)
+    # Поиск идёт ПАРАЛЛЕЛЬНО с анимацией: полоса крутится, пока летит запрос к таблице,
+    # и обрывается сразу как пришёл ответ. Быстрее по ощущению — нет «мёртвой» паузы.
+    async def _do_lookup() -> LookupResult:
+        try:
+            return await sheets_client.lookup(telegram_handle, full_name_guess)
+        except SheetsError as e:
+            logger.warning("lookup failed: %s", e)
+            return LookupResult(found=False)
+
+    lookup_task = asyncio.create_task(_do_lookup())
+    await _run_lookup_animation(bot, message.chat.id, screen, lookup_task)
+    result = await lookup_task
 
     if not result.found:
         await bot.edit_message_text(
@@ -89,9 +117,6 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot):
             "Как тебя зовут (имя и фамилия)?",
             chat_id=message.chat.id,
             message_id=screen.message_id,
-        )
-        await send_persistent_menu(
-            bot, message.chat.id, "Меню всегда под рукой 👇", main_menu(settings.is_admin(message.from_user.id))
         )
         from bot.states import Registration
 
@@ -125,7 +150,6 @@ async def _finish_recognized(bot: Bot, chat_id: int, tg_id: int, result: LookupR
 
     text = "✅ Нашёл! Рад видеть снова.\n\n" + _profile_summary(result.data or {})
     await render_screen(bot, chat_id, text, reply_markup=profile_edit_keyboard())
-    await send_persistent_menu(bot, chat_id, "Меню всегда под рукой 👇", main_menu(settings.is_admin(tg_id)))
 
 
 @router.callback_query(F.data == "dedup:confirm")
@@ -159,8 +183,9 @@ async def help_handler(message: Message, bot: Bot):
         bot,
         message.chat.id,
         "ℹ️ Это бот UGC-креаторов Packman Production.\n\n"
-        "👤 Моя анкета — посмотреть/обновить свои данные\n"
-        "📢 Запросы брендов — актуальные проекты для отклика\n\n"
+        "🧾 Моя анкета — посмотреть/обновить свои данные\n"
+        "🎯 Запросы брендов — актуальные проекты для отклика\n"
+        "📨 Мои отклики — статус твоих откликов на бренды\n\n"
         "Если что-то не работает — напишите в чат команды.",
         delete_trigger=message,
     )

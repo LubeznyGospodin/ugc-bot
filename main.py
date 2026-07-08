@@ -16,6 +16,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from bot.config import settings
 from bot.database import init_db
 from bot.handlers import router as root_router
+from bot.sync import run_sync_loop
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -25,11 +26,14 @@ async def main() -> None:
     if not settings.bot_token:
         raise RuntimeError("BOT_TOKEN не задан")
 
-    init_db()
+    await init_db()
 
     bot = Bot(token=settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(root_router)
+
+    # Фоновая синхронизация таблица → БД (бренды и т.д.) — чтения из БД мгновенны.
+    asyncio.create_task(run_sync_loop())
 
     logger.info("Бот запускается (polling)...")
     await bot.delete_webhook(drop_pending_updates=True)

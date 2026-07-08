@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from aiogram import Bot
@@ -22,6 +23,29 @@ from aiogram.types import InlineKeyboardMarkup, Message, ReplyKeyboardMarkup
 logger = logging.getLogger(__name__)
 
 _LAST_SCREEN_MSG: dict[int, int] = {}
+# Чаты, где уже поставлено нижнее reply-меню (сообщение-якорь). Меню-якорь НЕ
+# входит в цепочку render_screen (не удаляется), поэтому кнопки не пропадают при
+# смене экранов. Отправляется один раз на чат (в памяти процесса).
+_MENU_SET: set[int] = set()
+
+
+async def ensure_menu(bot: Bot, chat_id: int, reply_markup: ReplyKeyboardMarkup) -> None:
+    """Поставить нижнее reply-меню один раз на чат отдельным сообщением-якорем.
+    Это сообщение НЕ трогается render_screen, поэтому меню не исчезает при
+    удалении экранов (фикс бага «при узнавании пропадают кнопки»)."""
+    if chat_id in _MENU_SET:
+        return
+    try:
+        await bot.send_message(chat_id, "📋 Меню — кнопки снизу 👇", reply_markup=reply_markup)
+        _MENU_SET.add(chat_id)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("ensure_menu failed: %s", e)
+
+
+def reset_menu(chat_id: int) -> None:
+    """Забыть, что меню было поставлено (например, после временной reply-клавиатуры
+    «Поделиться контактом», чтобы вернуть основное меню)."""
+    _MENU_SET.discard(chat_id)
 
 
 async def _safe_delete(bot: Bot, chat_id: int, message_id: int) -> None:
@@ -40,27 +64,36 @@ async def render_screen(
     *,
     delete_trigger: Message | None = None,
 ) -> Message:
-    """Показать очередной "экран": убрать предыдущий экран бота, отправить новый.
+    """Показать очередной "экран" анкеты.
 
-    delete_trigger — сообщение пользователя, которое вызвало этот экран
-    (например, введённый текст анкеты); если передано, оно тоже удаляется,
-    чтобы не засорять чат.
+    Надёжный автоскролл (как @bro_hit_bot): СНАЧАЛА отправляем новое сообщение,
+    ПОТОМ удаляем предыдущий экран. Новое сообщение приходит вниз чата — Telegram
+    (в т.ч. Desktop) нативно прокручивает к нему, потому что пользователь только
+    что был у низа. Удаление старого экрана ВЫШЕ не сбивает позицию низа, а
+    автоскролл к новому уже сработал. (edit-in-place не давал скролла, т.к. новое
+    сообщение не создавалось; старый delete→send скроллил ненадёжно.)
+
+    delete_trigger — сообщение пользователя (введённый ответ анкеты); удаляем, чтобы
+    в чате оставался только текущий экран бота.
     """
-    if delete_trigger is not None:
-        await _safe_delete(bot, chat_id, delete_trigger.message_id)
-
     prev_id = _LAST_SCREEN_MSG.get(chat_id)
-    if prev_id is not None:
-        await _safe_delete(bot, chat_id, prev_id)
 
+    # 1) Отправляем новый экран — он оказывается внизу, чат скроллится к нему.
     sent = await bot.send_message(chat_id, text, reply_markup=reply_markup)
     _LAST_SCREEN_MSG[chat_id] = sent.message_id
 
-    # Автоскролл вниз после отправки
-    try:
-        await bot.send_message(chat_id, "​", reply_markup=None)  # невидимый спейсер
-    except Exception:
-        pass
+    # 1.5) Микро-пауза: даём клиенту (в т.ч. Desktop) закоммитить прокрутку к новому
+    # сообщению ДО удаления старого. Без неё delete прилетает в том же апдейте и
+    # рефлоу списка иногда отменяет автоскролл — отсюда «иногда не срабатывает».
+    await asyncio.sleep(0.12)
+
+    # 2) Теперь убираем предыдущий экран бота (он выше — удаление не трогает низ).
+    if prev_id is not None and prev_id != sent.message_id:
+        await _safe_delete(bot, chat_id, prev_id)
+
+    # 3) И убираем эхо-ответ пользователя, чтобы чат был чистым.
+    if delete_trigger is not None:
+        await _safe_delete(bot, chat_id, delete_trigger.message_id)
 
     return sent
 
@@ -75,3 +108,9 @@ async def send_persistent_menu(bot: Bot, chat_id: int, text: str, reply_markup: 
 def forget_screen(chat_id: int) -> None:
     """Сбросить память об экране (например, при /start с нуля)."""
     _LAST_SCREEN_MSG.pop(chat_id, None)
+
+
+def current_screen_id(chat_id: int) -> int | None:
+    """id текущего «экрана» бота в чате. Нужно фоновому обновлению: обновлять
+    экран только если пользователь всё ещё на нём (не ушёл в другое меню)."""
+    return _LAST_SCREEN_MSG.get(chat_id)
