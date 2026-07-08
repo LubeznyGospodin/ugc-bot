@@ -112,11 +112,13 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot):
     result = await lookup_task
 
     if not result.found:
-        await bot.edit_message_text(
+        # render_screen (а не edit) — шлём новое сообщение вниз, старый экран-загрузку
+        # удаляем. Telegram скроллит к новому сообщению; edit-in-place скролл не давал.
+        await render_screen(
+            bot,
+            message.chat.id,
             "🆕 Не нашёл тебя в наших списках — давай знакомиться!\n\n"
             "Как тебя зовут (имя и фамилия)?",
-            chat_id=message.chat.id,
-            message_id=screen.message_id,
         )
         from bot.states import Registration
 
@@ -125,11 +127,12 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot):
 
     if result.needs_confirmation:
         masked = _mask_instagram(result.confirm_value)
-        await bot.edit_message_text(
+        # render_screen вместо edit — тот же фикс скролла: новое сообщение внизу.
+        await render_screen(
+            bot,
+            message.chat.id,
             f"🤔 Похоже, мы уже знакомы — <b>{result.data.get('full_name')}</b>?\n"
             f"Твой Instagram: <code>{masked}</code> — это ты?",
-            chat_id=message.chat.id,
-            message_id=screen.message_id,
             reply_markup=confirm_dedup_keyboard(),
         )
         await state.update_data(lookup_row=result.row, lookup_data=result.data)
