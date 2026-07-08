@@ -87,6 +87,15 @@ def edit_fields_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def skip_photo_keyboard() -> InlineKeyboardMarkup:
+    """Кнопка пропуска шага «фото» в регистрации — фото можно добавить позже."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⏭ Добавить позже", callback_data="reg:photo_skip")],
+        ]
+    )
+
+
 def contact_request_keyboard() -> ReplyKeyboardMarkup:
     """Клавиатура «Поделиться контактом» — Telegram отдаёт номер телефона."""
     return ReplyKeyboardMarkup(

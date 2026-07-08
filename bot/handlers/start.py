@@ -201,7 +201,7 @@ async def dedup_confirm(call: CallbackQuery, state: FSMContext, bot: Bot):
     profile = data.get("lookup_data") or {}
     result = LookupResult(found=True, row=row, data=profile)
     await state.clear()
-    await call.answer("Отлично, ты в базе!")
+    await call.answer()  # без попапа — результат виден на экране
     await _finish_recognized(bot, call.message.chat.id, call.from_user.id, result)
 
 

@@ -26,6 +26,7 @@ from bot.keyboards import (
     contact_request_keyboard,
     main_menu,
     profile_edit_keyboard,
+    skip_photo_keyboard,
 )
 from bot.sheets import SheetsError, sheets_client
 from bot.states import Registration
@@ -43,9 +44,9 @@ STEP_PROMPTS = {
     Registration.rate: "Желаемая оплата за 1 ролик под ключ?",
     Registration.portfolio: "Ссылка на портфолио/примеры работ?",
     Registration.photo: (
-        "🖼 Ссылка на твои фото в хорошем качестве (идеально студийные, ≥8 фото).\n"
-        "Это нужно для базы креаторов Packman — по фото подбирают под запросы брендов.\n"
-        "Если пока нет — напиши «нет»."
+        "🖼 Ссылка на твои фото в хорошем качестве (идеально студийные, не менее 4 фото).\n\n"
+        "Это нужно для добавления в базу креаторов: https://t.me/ugc_creatory.\n\n"
+        "Можно добавить позже"
     ),
     Registration.age: "Сколько тебе лет?",
     Registration.city: "В каком городе живёшь?",
@@ -113,6 +114,18 @@ async def _ask_phone(chat_id: int, state: FSMContext, bot: Bot, trigger: Message
     )
 
 
+async def _ask_photo(chat_id: int, state: FSMContext, bot: Bot, trigger: Message | None) -> None:
+    """Шаг «фото» — с инлайн-кнопкой «Добавить позже» (фото необязательно на входе)."""
+    await state.set_state(Registration.photo)
+    await render_screen(
+        bot,
+        chat_id,
+        STEP_PROMPTS[Registration.photo],
+        reply_markup=skip_photo_keyboard(),
+        delete_trigger=trigger,
+    )
+
+
 async def _generic_step(message: Message, state: FSMContext, bot: Bot):
     current = await state.get_state()
     current_enum = next(s for s in STEP_ORDER if s.state == current)
@@ -122,6 +135,8 @@ async def _generic_step(message: Message, state: FSMContext, bot: Bot):
     nxt = _next_state(current_enum)
     if nxt == Registration.phone:
         await _ask_phone(message.chat.id, state, bot, message)
+    elif nxt == Registration.photo:
+        await _ask_photo(message.chat.id, state, bot, message)
     elif nxt == Registration.categories or nxt is None:
         await _show_categories(message.chat.id, state, bot, message)
     else:
@@ -150,6 +165,15 @@ async def phone_via_contact(message: Message, state: FSMContext, bot: Bot):
 async def phone_via_text(message: Message, state: FSMContext, bot: Bot):
     await state.update_data(phone=message.text.strip())
     await _after_phone(message.chat.id, state, bot, message, message.from_user.id)
+
+
+@router.callback_query(Registration.photo, F.data == "reg:photo_skip")
+async def photo_skip(call: CallbackQuery, state: FSMContext, bot: Bot):
+    """«Добавить позже» на шаге фото — пропускаем, идём дальше к возрасту."""
+    await call.answer()
+    await state.update_data(photo="")
+    await state.set_state(Registration.age)
+    await render_screen(bot, call.message.chat.id, STEP_PROMPTS[Registration.age])
 
 
 async def _show_categories(chat_id: int, state: FSMContext, bot: Bot, trigger: Message | None = None):

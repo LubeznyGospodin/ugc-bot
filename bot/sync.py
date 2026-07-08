@@ -14,8 +14,10 @@ import asyncio
 import logging
 from datetime import datetime
 
+import aiohttp
 from sqlalchemy import delete, select
 
+from bot.config import settings
 from bot.database import get_session
 from bot.models import CachedApplication, CachedBrand, Creator
 from bot.sheets import Application, Brand, SheetsError, sheets_client
@@ -137,28 +139,74 @@ async def sync_creators() -> int:
     return len(items)
 
 
+async def _notify_status(chat_id: int, brand_title: str, status: str, reason: str) -> None:
+    """Пуш креатору при смене статуса отклика. Шлём НАПРЯМУЮ по токену бота
+    (не через Apps Script) — надёжно, без хрупкой авторизации триггеров/UrlFetchApp."""
+    token = settings.bot_token
+    if not token:
+        return
+    if status == "оффер":
+        text = (
+            f"🎉 Отличные новости! По бренду «{brand_title}» тебе оффер. "
+            "Скоро свяжемся по деталям."
+        )
+    else:  # отказ
+        text = (
+            f"📩 По бренду «{brand_title}» в этот раз не сложилось."
+            + (f" Причина: {reason}" if reason else "")
+            + " Впереди новые запросы — не переживай!"
+        )
+    try:
+        async with aiohttp.ClientSession() as s:
+            await s.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat_id, "text": text},
+                timeout=aiohttp.ClientTimeout(total=10),
+            )
+    except Exception as e:  # noqa: BLE001 — пуш не критичен, не роняем синк
+        logger.warning("status push failed for %s: %s", chat_id, e)
+
+
 async def sync_applications() -> int:
-    """Тянет все отклики из таблицы → полностью пере-заливает кэш откликов в БД."""
+    """Тянет все отклики из таблицы → полностью пере-заливает кэш откликов в БД.
+    Заодно ловит СМЕНУ статуса (на оффер/отказ) сравнением со старым кэшем и шлёт
+    пуш креатору. Дедуп естественный: после замены старый=новый → повторно не шлём."""
     items = await sheets_client.all_applications()
     now = datetime.utcnow()
+    transitions: list[tuple[int, str, str, str]] = []
     async with get_session() as session:
+        # Снимок старых статусов ДО замены — для детекта смены.
+        old_rows = (await session.execute(select(CachedApplication))).scalars().all()
+        old = {(r.chat_id, r.brand_title): r.status for r in old_rows}
         await session.execute(delete(CachedApplication))
         for it in items:
             try:
                 cid = int(str(it.get("chat_id")).strip())
             except (TypeError, ValueError):
                 continue
+            brand_title = str(it.get("brand_title") or "")
+            status = (str(it.get("status") or "на рассмотрении")).strip().lower()
+            reason = str(it.get("reason") or "")
             session.add(
                 CachedApplication(
                     chat_id=cid,
-                    brand_title=str(it.get("brand_title") or ""),
-                    status=(str(it.get("status") or "на рассмотрении")).strip().lower(),
-                    reason=str(it.get("reason") or ""),
+                    brand_title=brand_title,
+                    status=status,
+                    reason=reason,
                     date=str(it.get("date") or ""),
                     synced_at=now,
                 )
             )
+            prev = old.get((cid, brand_title))
+            # Шлём только на РЕАЛЬНЫЙ переход в оффер/отказ (был другой статус и мы его
+            # уже видели). Начальное состояние (нет старой записи) не пушим — не спамим.
+            if prev is not None and prev != status and status in ("оффер", "отказ"):
+                transitions.append((cid, brand_title, status, reason))
         await session.commit()
+    for cid, brand_title, status, reason in transitions:
+        await _notify_status(cid, brand_title, status, reason)
+    if transitions:
+        logger.info("status pushes sent: %s", len(transitions))
     return len(items)
 
 

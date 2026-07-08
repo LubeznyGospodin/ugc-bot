@@ -223,8 +223,13 @@ async def edit_pick(call: CallbackQuery, state: FSMContext, bot: Bot):
     await call.answer()
     await state.set_state(EditField.waiting_value)
     await state.update_data(edit_field=key)
-    hint = "категории через запятую (например: Бьюти, Еда)" if key == "category" else _LABELS[key]
-    await render_screen(bot, call.message.chat.id, f"✏️ Введи новое значение — {hint}:")
+    if key == "photo":
+        prompt = "🖼 Добавь актуальную ссылку на свои фото (любое облако):"
+    elif key == "category":
+        prompt = "✏️ Введи новое значение — категории через запятую (например: Бьюти, Еда):"
+    else:
+        prompt = f"✏️ Введи новое значение — {_LABELS[key]}:"
+    await render_screen(bot, call.message.chat.id, prompt)
 
 
 @router.message(EditField.waiting_value, F.text, ~F.text.in_(_MENU_BTNS))
