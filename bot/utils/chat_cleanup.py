@@ -18,7 +18,7 @@ import logging
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import InlineKeyboardMarkup, Message, ReplyKeyboardMarkup
+from aiogram.types import InlineKeyboardMarkup, Message, MessageEntity, ReplyKeyboardMarkup
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,7 @@ async def render_screen(
     reply_markup: InlineKeyboardMarkup | ReplyKeyboardMarkup | None = None,
     *,
     delete_trigger: Message | None = None,
+    entities: list[MessageEntity] | None = None,
 ) -> Message:
     """Показать очередной "экран" анкеты.
 
@@ -79,7 +80,13 @@ async def render_screen(
     prev_id = _LAST_SCREEN_MSG.get(chat_id)
 
     # 1) Отправляем новый экран — он оказывается внизу, чат скроллится к нему.
-    sent = await bot.send_message(chat_id, text, reply_markup=reply_markup)
+    # entities и parse_mode взаимоисключающи в Bot API: если переданы entities
+    # (напр. custom_emoji анимация загрузки), явно гасим дефолтный parse_mode.
+    send_kwargs: dict = {"reply_markup": reply_markup}
+    if entities is not None:
+        send_kwargs["entities"] = entities
+        send_kwargs["parse_mode"] = None
+    sent = await bot.send_message(chat_id, text, **send_kwargs)
     _LAST_SCREEN_MSG[chat_id] = sent.message_id
 
     # 1.5) Микро-пауза: даём клиенту (в т.ч. Desktop) закоммитить прокрутку к новому

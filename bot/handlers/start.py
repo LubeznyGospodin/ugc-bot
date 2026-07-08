@@ -20,9 +20,10 @@ import asyncio
 import logging
 
 from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, MessageEntity
 
 from bot.config import settings
 from bot.keyboards import BTN_HELP, confirm_dedup_keyboard, main_menu, profile_edit_keyboard
@@ -52,6 +53,32 @@ def _profile_summary(data: dict) -> str:
         f"Telegram: {data.get('telegram') or '—'}\n"
         f"Instagram: {data.get('instagram') or '—'}"
     )
+
+
+# Пак анимированных custom-emoji для индикатора загрузки (t.me/addemoji/…).
+# Бота может слать custom-emoji только если у ВЛАДЕЛЬЦА бота есть Telegram Premium;
+# при любой ошибке отправки — мягкий фолбэк на текстовую анимацию (см. cmd_start).
+LOADING_EMOJI_SET = "LoadingStatusByTimDesign"
+# Кэш выбранного эмодзи на время жизни процесса: {"cid":.., "alt":..} при успехе.
+_loading_emoji_cache: dict[str, str] = {}
+
+
+async def _get_loading_emoji(bot: Bot) -> tuple[str, str] | None:
+    """(custom_emoji_id, alt) анимированного loading-эмодзи из пака, с кэшем.
+    None — если пак недоступен: тогда используется текстовая анимация."""
+    if "cid" in _loading_emoji_cache:
+        return _loading_emoji_cache["cid"], _loading_emoji_cache["alt"]
+    try:
+        sset = await bot.get_sticker_set(LOADING_EMOJI_SET)
+        st = next((s for s in sset.stickers if s.custom_emoji_id), None)
+        if st is None:
+            return None
+        _loading_emoji_cache["cid"] = st.custom_emoji_id
+        _loading_emoji_cache["alt"] = st.emoji or "⏳"
+        return _loading_emoji_cache["cid"], _loading_emoji_cache["alt"]
+    except Exception as e:  # noqa: BLE001 — сеть/недоступность пака не должна ронять /start
+        logger.warning("loading emoji fetch failed: %s", e)
+        return None
 
 
 async def _run_lookup_animation(bot: Bot, chat_id: int, screen: Message, lookup_task) -> None:
@@ -86,20 +113,13 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot):
     # пропадают (фикс бага «при узнавании всё удаляется»). И это не спам: одно сообщение.
     await ensure_menu(bot, message.chat.id, main_menu(settings.is_admin(message.from_user.id)))
 
-    screen = await render_screen(
-        bot,
-        message.chat.id,
-        "📡 Ищу тебя в базе...",
-        delete_trigger=message,
-    )
-
     telegram_handle = f"@{message.from_user.username}" if message.from_user.username else ""
     full_name_guess = " ".join(
         filter(None, [message.from_user.first_name, message.from_user.last_name])
     )
 
-    # Поиск идёт ПАРАЛЛЕЛЬНО с анимацией: полоса крутится, пока летит запрос к таблице,
-    # и обрывается сразу как пришёл ответ. Быстрее по ощущению — нет «мёртвой» паузы.
+    # Поиск идёт ПАРАЛЛЕЛЬНО с анимацией: запрос к таблице летит, пока крутится
+    # индикатор, и мы его дожидаемся сразу как пришёл ответ.
     async def _do_lookup() -> LookupResult:
         try:
             return await sheets_client.lookup(telegram_handle, full_name_guess)
@@ -108,8 +128,38 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot):
             return LookupResult(found=False)
 
     lookup_task = asyncio.create_task(_do_lookup())
-    await _run_lookup_animation(bot, message.chat.id, screen, lookup_task)
-    result = await lookup_task
+
+    # Пытаемся показать экран-загрузку с анимированным custom-emoji из пака. Само
+    # движение даёт эмодзи, поэтому текстовый прогресс-бар не нужен. Если пак/Premium
+    # недоступны — TelegramBadRequest → мягкий фолбэк на текстовую анимацию ниже.
+    screen = None
+    loading = await _get_loading_emoji(bot)
+    if loading:
+        cid, alt = loading
+        alt_len = len(alt.encode("utf-16-le")) // 2  # длина в UTF-16, как ждёт Bot API
+        entity = MessageEntity(type="custom_emoji", offset=0, length=alt_len, custom_emoji_id=cid)
+        try:
+            screen = await render_screen(
+                bot,
+                message.chat.id,
+                f"{alt} Ищу тебя в базе…",
+                delete_trigger=message,
+                entities=[entity],
+            )
+        except TelegramBadRequest as e:
+            logger.warning("animated loading unavailable, fallback to text: %s", e)
+            screen = None
+
+    if screen is not None:
+        # Анимация — сам эмодзи; просто ждём ответ поиска.
+        result = await lookup_task
+    else:
+        # Фолбэк: текстовый экран + бегущий прогресс-бар параллельно поиску.
+        screen = await render_screen(
+            bot, message.chat.id, "📡 Ищу тебя в базе...", delete_trigger=message
+        )
+        await _run_lookup_animation(bot, message.chat.id, screen, lookup_task)
+        result = await lookup_task
 
     if not result.found:
         # render_screen (а не edit) — шлём новое сообщение вниз, старый экран-загрузку
