@@ -173,12 +173,25 @@ async def sync_applications() -> int:
     пуш креатору. Дедуп естественный: после замены старый=новый → повторно не шлём."""
     items = await sheets_client.all_applications()
     now = datetime.utcnow()
+    _FINAL = ("оффер", "отказ")
+
+    def _collapse(pairs: list[tuple[tuple[int, str], str]]) -> dict[tuple[int, str], str]:
+        # (chat_id, brand_title) -> ОДИН эффективный статус. Финальный (оффер/отказ)
+        # приоритетнее «на рассмотрении». Схлопывание дублей строк устраняет прошлый
+        # баг: дубли давали нестабильное сравнение и пуш на КАЖДЫЙ синк.
+        m: dict[tuple[int, str], str] = {}
+        for key, st in pairs:
+            cur = m.get(key)
+            if cur is None or (st in _FINAL and cur not in _FINAL):
+                m[key] = st
+        return m
+
     transitions: list[tuple[int, str, str, str]] = []
     async with get_session() as session:
-        # Снимок старых статусов ДО замены — для детекта смены.
         old_rows = (await session.execute(select(CachedApplication))).scalars().all()
-        old = {(r.chat_id, r.brand_title): r.status for r in old_rows}
+        old = _collapse([((r.chat_id, r.brand_title), r.status) for r in old_rows])
         await session.execute(delete(CachedApplication))
+        new_pairs: list[tuple[tuple[int, str], str, str]] = []
         for it in items:
             try:
                 cid = int(str(it.get("chat_id")).strip())
@@ -197,12 +210,18 @@ async def sync_applications() -> int:
                     synced_at=now,
                 )
             )
-            prev = old.get((cid, brand_title))
-            # Шлём только на РЕАЛЬНЫЙ переход в оффер/отказ (был другой статус и мы его
-            # уже видели). Начальное состояние (нет старой записи) не пушим — не спамим.
-            if prev is not None and prev != status and status in ("оффер", "отказ"):
-                transitions.append((cid, brand_title, status, reason))
+            new_pairs.append(((cid, brand_title), status, reason))
         await session.commit()
+
+    # Детект по СХЛОПНУТЫМ статусам: пуш только на реальный переход в оффер/отказ,
+    # когда прошлый статус был известен И отличается. Первое появление (prev=None)
+    # не пушим — не спамим уже существующие офферы при старте.
+    new_collapsed = _collapse([(k, s) for k, s, _ in new_pairs])
+    reasons = {k: r for k, s, r in new_pairs if s in _FINAL}
+    for key, st in new_collapsed.items():
+        prev = old.get(key)
+        if prev is not None and prev != st and st in _FINAL:
+            transitions.append((key[0], key[1], st, reasons.get(key, "")))
     for cid, brand_title, status, reason in transitions:
         await _notify_status(cid, brand_title, status, reason)
     if transitions:
