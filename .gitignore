@@ -9,6 +9,9 @@ venv/
 .env
 *.db
 data/
+# Клон Apps Script (clasp): Код.js содержит SECRET вебхука — не в репозиторий.
+# Источник правды — сам проект Apps Script (clasp pull восстановит).
+apps_script/
 
 # ОС
 .DS_Store

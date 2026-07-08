@@ -10,6 +10,7 @@ class Registration(StatesGroup):
     other_socials = State()
     rate = State()
     portfolio = State()
+    photo = State()
     age = State()
     city = State()
     phone = State()

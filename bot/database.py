@@ -4,6 +4,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from bot.config import settings
@@ -27,6 +28,19 @@ async def init_db() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Мягкая миграция: create_all НЕ добавляет колонки в уже существующую таблицу.
+    # Для БД, созданной до появления поля photo, доливаем колонку идемпотентно
+    # (повторный запуск/новая таблица — ALTER падает на «дубликат» и гасится).
+    await _add_column_if_missing("creators", "photo", "TEXT")
+
+
+async def _add_column_if_missing(table: str, column: str, coltype: str) -> None:
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}"))
+    except Exception:  # noqa: BLE001 — колонка уже есть: и Postgres, и SQLite бросают ошибку
+        pass
 
 
 @asynccontextmanager

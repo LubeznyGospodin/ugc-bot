@@ -40,6 +40,7 @@ _DB_FIELD = {
     "other_socials": "other_socials",
     "rate": "rate",
     "portfolio": "portfolio",
+    "photo": "photo",
     "age": "age",
     "city": "city",
     "phone": "phone",
@@ -83,6 +84,7 @@ def _profile_text_from_sheet(d: dict) -> str:
         f"Соцсети: {v('other_socials')}\n"
         f"Оплата: {v('rate')}\n"
         f"Портфолио: {v('portfolio')}\n"
+        f"Фото: {v('photo')}\n"
         f"Возраст: {v('age')}\n"
         f"Город: {v('city')}\n"
         f"Телефон: {v('phone')}\n"
@@ -98,6 +100,7 @@ def _profile_text(creator) -> str:
         f"Соцсети: {creator.other_socials or '—'}\n"
         f"Оплата: {creator.rate or '—'}\n"
         f"Портфолио: {creator.portfolio or '—'}\n"
+        f"Фото: {creator.photo or '—'}\n"
         f"Возраст: {creator.age or '—'}\n"
         f"Город: {creator.city or '—'}\n"
         f"Телефон: {creator.phone or '—'}\n"
@@ -113,6 +116,7 @@ _SHEET_TO_CREATOR = {
     "other_socials": "other_socials",
     "rate": "rate",
     "portfolio": "portfolio",
+    "photo": "photo",
     "age": "age",
     "city": "city",
     "phone": "phone",

@@ -42,6 +42,11 @@ STEP_PROMPTS = {
     Registration.other_socials: "Другие соцсети (TikTok/YouTube и т.д.)? Если нет — напиши «нет».",
     Registration.rate: "Желаемая оплата за 1 ролик под ключ?",
     Registration.portfolio: "Ссылка на портфолио/примеры работ?",
+    Registration.photo: (
+        "🖼 Ссылка на твои фото в хорошем качестве (идеально студийные, ≥8 фото).\n"
+        "Это нужно для базы креаторов Packman — по фото подбирают под запросы брендов.\n"
+        "Если пока нет — напиши «нет»."
+    ),
     Registration.age: "Сколько тебе лет?",
     Registration.city: "В каком городе живёшь?",
 }
@@ -53,6 +58,7 @@ STEP_ORDER = [
     Registration.other_socials,
     Registration.rate,
     Registration.portfolio,
+    Registration.photo,
     Registration.age,
     Registration.city,
     Registration.phone,
@@ -65,6 +71,7 @@ TEXT_STEPS = [
     Registration.other_socials,
     Registration.rate,
     Registration.portfolio,
+    Registration.photo,
     Registration.age,
     Registration.city,
 ]
@@ -74,6 +81,7 @@ FIELD_BY_STATE = {
     Registration.other_socials: "other_socials",
     Registration.rate: "rate",
     Registration.portfolio: "portfolio",
+    Registration.photo: "photo",
     Registration.age: "age",
     Registration.city: "city",
     Registration.phone: "phone",
@@ -189,6 +197,7 @@ async def _show_confirm(chat_id: int, state: FSMContext, bot: Bot):
         f"Соцсети: {data.get('other_socials')}\n"
         f"Оплата: {data.get('rate')}\n"
         f"Портфолио: {data.get('portfolio')}\n"
+        f"Фото: {data.get('photo')}\n"
         f"Возраст: {data.get('age')}\n"
         f"Город: {data.get('city')}\n"
         f"Телефон: {data.get('phone')}\n"

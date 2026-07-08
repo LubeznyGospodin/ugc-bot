@@ -26,7 +26,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, MessageEntity
 
 from bot.config import settings
-from bot.keyboards import BTN_HELP, confirm_dedup_keyboard, main_menu, profile_edit_keyboard
+from bot.keyboards import BTN_HELP, confirm_dedup_keyboard, main_menu
 from bot.sheets import LookupResult, SheetsError, sheets_client
 from bot.states import Dedup
 from bot.utils.chat_cleanup import ensure_menu, forget_screen, render_screen
@@ -34,17 +34,6 @@ from bot.utils.db_helpers import upsert_creator
 
 logger = logging.getLogger(__name__)
 router = Router(name="start")
-
-
-def _mask_instagram(value: str | None) -> str:
-    if not value:
-        return "(не указан)"
-    # Показываем не всю ссылку, а узнаваемый, но не 100% полный фрагмент —
-    # так подтверждение остаётся содержательной проверкой, а не подсказкой-ответом.
-    tail = value.strip().split("/")[-1] or value.strip()
-    if len(tail) <= 4:
-        return tail
-    return tail[:2] + "•" * (len(tail) - 4) + tail[-2:]
 
 
 def _profile_summary(data: dict) -> str:
@@ -175,22 +164,18 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot):
         await state.set_state(Registration.full_name)
         return
 
-    if result.needs_confirmation:
-        masked = _mask_instagram(result.confirm_value)
-        # render_screen вместо edit — тот же фикс скролла: новое сообщение внизу.
-        await render_screen(
-            bot,
-            message.chat.id,
-            f"🤔 Похоже, мы уже знакомы — <b>{result.data.get('full_name')}</b>?\n"
-            f"Твой Instagram: <code>{masked}</code> — это ты?",
-            reply_markup=confirm_dedup_keyboard(),
-        )
-        await state.update_data(lookup_row=result.row, lookup_data=result.data)
-        await state.set_state(Dedup.waiting_confirmation)
-        return
-
-    # Явное совпадение — сразу считаем найденным.
-    await _finish_recognized(bot, message.chat.id, message.from_user.id, result)
+    # Найден в базе (любая уверенность) — показываем Имя/Telegram/Instagram и просим
+    # подтвердить «это я?». Кнопка «Да, это я!» отметит в таблице «Есть в боте»=да и
+    # Chat ID (см. dedup_confirm → _finish_recognized). Заново заполнять НЕ просим.
+    profile = result.data or {}
+    await render_screen(
+        bot,
+        message.chat.id,
+        "🔎 Нашёл тебя в базе:\n\n" + _profile_summary(profile) + "\n\nЭто ты?",
+        reply_markup=confirm_dedup_keyboard(),
+    )
+    await state.update_data(lookup_row=result.row, lookup_data=profile)
+    await state.set_state(Dedup.waiting_confirmation)
 
 
 async def _finish_recognized(bot: Bot, chat_id: int, tg_id: int, result: LookupResult) -> None:
@@ -201,8 +186,12 @@ async def _finish_recognized(bot: Bot, chat_id: int, tg_id: int, result: LookupR
 
     await upsert_creator(tg_id, username=None, fields=result.data or {}, sheet_row=result.row)
 
-    text = "✅ Нашёл! Рад видеть снова.\n\n" + _profile_summary(result.data or {})
-    await render_screen(bot, chat_id, text, reply_markup=profile_edit_keyboard())
+    text = (
+        "✅ Отлично, узнал тебя! Ты в базе Packman.\n\n"
+        + _profile_summary(result.data or {})
+        + "\n\nОбновить данные можно в «🧾 Моя анкета»."
+    )
+    await render_screen(bot, chat_id, text)
 
 
 @router.callback_query(F.data == "dedup:confirm")
@@ -212,7 +201,7 @@ async def dedup_confirm(call: CallbackQuery, state: FSMContext, bot: Bot):
     profile = data.get("lookup_data") or {}
     result = LookupResult(found=True, row=row, data=profile)
     await state.clear()
-    await call.answer("Отлично, обновил твои данные!")
+    await call.answer("Отлично, ты в базе!")
     await _finish_recognized(bot, call.message.chat.id, call.from_user.id, result)
 
 

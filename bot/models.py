@@ -32,6 +32,7 @@ class Creator(Base):
     other_socials: Mapped[str | None] = mapped_column(Text, nullable=True)
     rate: Mapped[str | None] = mapped_column(String(255), nullable=True)
     portfolio: Mapped[str | None] = mapped_column(Text, nullable=True)
+    photo: Mapped[str | None] = mapped_column(Text, nullable=True)
     age: Mapped[str | None] = mapped_column(String(16), nullable=True)
     city: Mapped[str | None] = mapped_column(String(255), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(64), nullable=True)

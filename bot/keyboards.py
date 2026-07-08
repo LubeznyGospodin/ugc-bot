@@ -25,6 +25,7 @@ EDITABLE_FIELDS: list[tuple[str, str]] = [
     ("other_socials", "Другие соцсети"),
     ("rate", "Оплата"),
     ("portfolio", "Портфолио"),
+    ("photo", "Фото"),
     ("age", "Возраст"),
     ("city", "Город"),
     ("phone", "Телефон"),
@@ -51,13 +52,13 @@ def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
 
 
 def confirm_dedup_keyboard() -> InlineKeyboardMarkup:
-    """Показывается, когда lookup нашёл кандидата с confidence 70-92% —
-    просим подтвердить, что это тот же человек, по отличающему полю (Instagram)."""
+    """Показывается на /start, когда lookup нашёл креатора в базе — сверяем данные
+    и просим подтвердить «это я?». «Да» → отмечаем «Есть в боте»=да + Chat ID."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="✅ Это я", callback_data="dedup:confirm"),
-                InlineKeyboardButton(text="❌ Не я, я новый", callback_data="dedup:reject"),
+                InlineKeyboardButton(text="✅ Да, это я!", callback_data="dedup:confirm"),
+                InlineKeyboardButton(text="❌ Это не я", callback_data="dedup:reject"),
             ]
         ]
     )
