@@ -29,7 +29,7 @@ from bot.config import settings
 from bot.keyboards import BTN_HELP, confirm_dedup_keyboard, main_menu
 from bot.sheets import LookupResult, SheetsError, sheets_client
 from bot.states import Dedup
-from bot.utils.chat_cleanup import ensure_menu, forget_screen, render_screen
+from bot.utils.chat_cleanup import ensure_menu, render_screen
 from bot.utils.db_helpers import upsert_creator
 
 logger = logging.getLogger(__name__)
@@ -95,7 +95,8 @@ async def _run_lookup_animation(bot: Bot, chat_id: int, screen: Message, lookup_
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext, bot: Bot):
     await state.clear()
-    forget_screen(message.chat.id)
+    # НЕ забываем прошлый экран: пусть render_screen ниже удалит его (иначе после
+    # /start в чате повисает старый экран, напр. «Готово, анкета сохранена»).
 
     # Нижнее меню ставим ОТДЕЛЬНЫМ сообщением-якорем (один раз на чат). Оно НЕ входит
     # в цепочку render_screen, поэтому не удаляется при смене экранов — кнопки не
