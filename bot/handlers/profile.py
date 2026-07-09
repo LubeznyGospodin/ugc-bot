@@ -26,7 +26,7 @@ from bot.keyboards import (
 )
 from bot.sheets import SheetsError, sheets_client
 from bot.states import EditField
-from bot.utils.chat_cleanup import current_screen_id, render_screen
+from bot.utils.chat_cleanup import current_screen_id, render_loading, render_screen
 from bot.utils.db_helpers import get_creator_by_tg_id, upsert_creator
 
 logger = logging.getLogger(__name__)
@@ -167,7 +167,8 @@ async def show_profile(message: Message, bot: Bot, state: FSMContext):
         )
         return
 
-    # Кэша нет (первый раз) → тянем из таблицы и рендерим один раз.
+    # Кэша нет (первый раз) → показываем анимированную загрузку и тянем из таблицы.
+    await render_loading(bot, message.chat.id, "Загружаю анкету…", delete_trigger=message)
     sheet_data = None
     try:
         sheet_data = await sheets_client.profile(uid)
@@ -178,14 +179,11 @@ async def show_profile(message: Message, bot: Bot, state: FSMContext):
         fields = {_SHEET_TO_CREATOR[k]: v for k, v in sheet_data.items() if k in _SHEET_TO_CREATOR}
         await upsert_creator(uid, username=message.from_user.username, fields=fields)
         text = _profile_text_from_sheet(sheet_data) + await _track_record_line(uid)
-        await render_screen(
-            bot, message.chat.id, text, reply_markup=profile_edit_keyboard(), delete_trigger=message
-        )
+        # delete_trigger=None → правим экран-загрузку на месте (внизу).
+        await render_screen(bot, message.chat.id, text, reply_markup=profile_edit_keyboard())
     else:
         await render_screen(
-            bot, message.chat.id,
-            "У тебя пока нет анкеты. Нажми /start, чтобы заполнить.",
-            delete_trigger=message,
+            bot, message.chat.id, "У тебя пока нет анкеты. Нажми /start, чтобы заполнить."
         )
 
 

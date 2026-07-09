@@ -30,7 +30,7 @@ from bot.keyboards import (
 )
 from bot.sheets import SheetsError, sheets_client
 from bot.states import Registration
-from bot.utils.chat_cleanup import ensure_menu, render_screen, reset_menu
+from bot.utils.chat_cleanup import ensure_menu, render_loading, render_screen, reset_menu
 from bot.utils.db_helpers import get_creator_by_tg_id, upsert_creator
 
 logger = logging.getLogger(__name__)
@@ -256,7 +256,7 @@ async def submit(call: CallbackQuery, state: FSMContext, bot: Bot):
 
     logger.info(f"Registration submit for user {tg_id}: {data.get('full_name')}")
     await call.answer("Отправляю...")
-    await render_screen(bot, chat_id, "⏳ Сохраняю анкету...")
+    await render_loading(bot, chat_id, "Сохраняю анкету…")
 
     # 1. Проверь есть ли уже в локальной БД
     existing = await get_creator_by_tg_id(tg_id)

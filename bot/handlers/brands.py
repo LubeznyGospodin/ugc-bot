@@ -15,7 +15,7 @@ from aiogram.types import CallbackQuery, Message
 from bot.config import settings
 from bot.keyboards import BTN_BRANDS, BTN_MY_APPS, brand_card_keyboard, brands_list_keyboard
 from bot.sheets import SheetsError, sheets_client
-from bot.utils.chat_cleanup import current_screen_id, render_screen
+from bot.utils.chat_cleanup import current_screen_id, render_loading, render_screen
 from bot.utils.db_helpers import get_creator_by_tg_id
 
 logger = logging.getLogger(__name__)
@@ -125,14 +125,16 @@ async def show_my_applications(message: Message, bot: Bot):
         )
         return
 
-    # Кэша нет (первый раз) → тянем один раз и рендерим.
+    # Кэша нет (первый раз) → показываем анимированную загрузку и тянем один раз.
+    await render_loading(bot, message.chat.id, "Загружаю отклики…", delete_trigger=message)
     try:
         fresh = await sheets_client.my_applications(uid)
         await cache_applications(uid, fresh)
     except SheetsError as e:
         logger.warning("my_applications fetch failed: %s", e)
         fresh = []
-    await render_screen(bot, message.chat.id, _apps_text(fresh), delete_trigger=message)
+    # delete_trigger=None → правим экран-загрузку на месте (внизу).
+    await render_screen(bot, message.chat.id, _apps_text(fresh))
 
 
 def _brands_text(brands, hot) -> str:
