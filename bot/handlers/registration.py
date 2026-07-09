@@ -258,22 +258,15 @@ async def submit(call: CallbackQuery, state: FSMContext, bot: Bot):
     await call.answer("Отправляю...")
     await render_loading(bot, chat_id, "Сохраняю анкету…")
 
-    # 1. Проверь есть ли уже в локальной БД
+    # Обновляем строку в таблице ТОЛЬКО если она уже привязана к этому юзеру (его
+    # узнали и он подтвердил «Да, это я» на /start → в БД есть sheet_row). Иначе —
+    # это новый креатор → ДОБАВЛЯЕМ новую строку. НЕ ищем по нечёткому совпадению
+    # перед записью: раньше это перезаписывало чужую строку с похожим именем.
     existing = await get_creator_by_tg_id(tg_id)
     is_edit = existing is not None and existing.sheet_row is not None
     sheet_row = existing.sheet_row if is_edit else None
 
-    # 2. Если нет sheet_row, сначала ищем в Google Sheets (ПЕРЕД отправкой!)
-    if sheet_row is None:
-        try:
-            lookup = await sheets_client.lookup(data.get("telegram", ""), data.get("full_name", ""))
-            if lookup.found:
-                sheet_row = lookup.row
-                is_edit = True  # найдено в таблице = нужно обновлять, а не добавлять
-        except SheetsError as e:
-            logger.warning("lookup failed (non-fatal): %s", e)
-
-    # 3. Теперь отправляй в Google Sheets (обновляй или добавляй)
+    # Отправляй в Google Sheets (обновляй привязанную строку или добавляй новую)
     try:
         logger.info(f"Saving to sheets: is_edit={is_edit}, sheet_row={sheet_row}")
         if is_edit and sheet_row is not None:

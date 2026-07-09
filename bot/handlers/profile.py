@@ -71,40 +71,58 @@ async def _track_record_line(tg_id: int) -> str:
     return f"\n\n📊 Откликов: {total} · Офферов: {offers} · Уровень: {level}"
 
 
-def _profile_text_from_sheet(d: dict) -> str:
-    """Профиль из живой строки таблицы (ключи приходят по заголовкам из doProfile_)."""
-    def v(key: str) -> str:
-        val = d.get(key)
-        return str(val).strip() if val not in (None, "") else "—"
+def _clean_links(value: str) -> str:
+    """Обрезает трекинговые хвосты у ссылок: https://…/makeeva.daa?igsh=…&utm_source=qr
+    → https://…/makeeva.daa. Работает и когда в поле несколько ссылок через пробел."""
+    if not value:
+        return value
+    parts = str(value).split()
+    cleaned = [(p.split("?", 1)[0] if p.startswith("http") else p) for p in parts]
+    return " ".join(cleaned) if cleaned else str(value)
+
+
+def _format_profile(
+    full_name, telegram, instagram, other_socials, photo, portfolio, rate, age, city, phone, category
+) -> str:
+    """Единое красивое оформление анкеты: эмодзи-метки, разделение на блоки,
+    чистые ссылки (без ?igsh/utm-хвостов)."""
+    def v(x) -> str:
+        return str(x).strip() if x not in (None, "") else "—"
+
+    def link(x) -> str:
+        return _clean_links(v(x))
 
     return (
-        f"👤 <b>{v('full_name')}</b>\n"
-        f"Telegram: {v('telegram')}\n"
-        f"Instagram: {v('instagram')}\n"
-        f"Соцсети: {v('other_socials')}\n"
-        f"Оплата: {v('rate')}\n"
-        f"Портфолио: {v('portfolio')}\n"
-        f"Фото: {v('photo')}\n"
-        f"Возраст: {v('age')}\n"
-        f"Город: {v('city')}\n"
-        f"Телефон: {v('phone')}\n"
-        f"Категории: {v('category')}"
+        f"👤 <b>{v(full_name)}</b>\n"
+        f"\n"
+        f"✈️ <b>Telegram:</b> {v(telegram)}\n"
+        f"📸 <b>Instagram:</b> {link(instagram)}\n"
+        f"🔗 <b>Другие соцсети:</b> {link(other_socials)}\n"
+        f"🖼 <b>Фото:</b> {link(photo)}\n"
+        f"🎬 <b>Портфолио:</b> {link(portfolio)}\n"
+        f"\n"
+        f"💰 <b>Оплата:</b> {v(rate)}\n"
+        f"🎂 <b>Возраст:</b> {v(age)}\n"
+        f"📍 <b>Город:</b> {v(city)}\n"
+        f"📱 <b>Телефон:</b> {v(phone)}\n"
+        f"🏷 <b>Категории:</b> {v(category)}"
+    )
+
+
+def _profile_text_from_sheet(d: dict) -> str:
+    """Профиль из живой строки таблицы (ключи по заголовкам из doProfile_)."""
+    return _format_profile(
+        d.get("full_name"), d.get("telegram"), d.get("instagram"), d.get("other_socials"),
+        d.get("photo"), d.get("portfolio"), d.get("rate"), d.get("age"), d.get("city"),
+        d.get("phone"), d.get("category"),
     )
 
 
 def _profile_text(creator) -> str:
-    return (
-        f"👤 <b>{creator.full_name or '—'}</b>\n"
-        f"Telegram: {creator.telegram_contact or '—'}\n"
-        f"Instagram: {creator.instagram or '—'}\n"
-        f"Соцсети: {creator.other_socials or '—'}\n"
-        f"Оплата: {creator.rate or '—'}\n"
-        f"Портфолио: {creator.portfolio or '—'}\n"
-        f"Фото: {creator.photo or '—'}\n"
-        f"Возраст: {creator.age or '—'}\n"
-        f"Город: {creator.city or '—'}\n"
-        f"Телефон: {creator.phone or '—'}\n"
-        f"Категории: {creator.categories or '—'}"
+    return _format_profile(
+        creator.full_name, creator.telegram_contact, creator.instagram, creator.other_socials,
+        creator.photo, creator.portfolio, creator.rate, creator.age, creator.city,
+        creator.phone, creator.categories,
     )
 
 
