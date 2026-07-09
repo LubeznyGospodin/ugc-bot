@@ -134,6 +134,15 @@ async def sync_creators() -> int:
                 v = it.get(k)
                 if v not in (None, "") and hasattr(c, field):
                     setattr(c, field, v)
+            # Самолечение привязки к строке: держим sheet_row в актуальном состоянии
+            # по номеру строки из таблицы (если креатора перенесли/строки сдвинулись —
+            # правки анкеты пойдут в правильную строку, а не в чужую).
+            try:
+                row = int(str(it.get("row")).strip())
+                if row > 1:
+                    c.sheet_row = row
+            except (TypeError, ValueError):
+                pass
             c.synced_at = now
         await session.commit()
     return len(items)
