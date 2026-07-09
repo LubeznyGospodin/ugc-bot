@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
@@ -162,6 +163,48 @@ async def render_loading(
         except TelegramBadRequest:
             pass
     return await render_screen(bot, chat_id, f"⏳ {text}", delete_trigger=delete_trigger)
+
+
+@asynccontextmanager
+async def loading_guard(
+    bot: Bot,
+    chat_id: int,
+    *,
+    delete_trigger: Message | None = None,
+    text: str = "Загружаю…",
+    delay: float = 0.4,
+):
+    """Показать анимированную загрузку, ЕСЛИ блок внутри длится дольше `delay` сек
+    (по умолчанию 0.4с). Быстрые операции (из кэша) не мигают, медленные получают
+    индикатор. Возвращает dict со `shown`: True, если загрузка была показана — тогда
+    итоговый render_screen делайте с delete_trigger=None (правка индикатора на месте);
+    иначе передайте исходный delete_trigger.
+
+    Использование:
+        async with loading_guard(bot, chat_id, delete_trigger=msg, text="…") as lg:
+            data = await slow_fetch()
+        await render_screen(bot, chat_id, out, reply_markup=kb,
+                            delete_trigger=None if lg["shown"] else msg)
+    """
+    state = {"shown": False}
+
+    async def _show() -> None:
+        try:
+            await asyncio.sleep(delay)
+            await render_loading(bot, chat_id, text, delete_trigger=delete_trigger)
+            state["shown"] = True
+        except asyncio.CancelledError:
+            pass
+
+    task = asyncio.create_task(_show())
+    try:
+        yield state
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 async def send_persistent_menu(bot: Bot, chat_id: int, text: str, reply_markup: ReplyKeyboardMarkup) -> None:

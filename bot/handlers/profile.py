@@ -26,7 +26,7 @@ from bot.keyboards import (
 )
 from bot.sheets import SheetsError, sheets_client
 from bot.states import EditField
-from bot.utils.chat_cleanup import current_screen_id, render_loading, render_screen
+from bot.utils.chat_cleanup import current_screen_id, loading_guard, render_screen
 from bot.utils.db_helpers import get_creator_by_tg_id, upsert_creator
 
 logger = logging.getLogger(__name__)
@@ -151,39 +151,41 @@ async def show_profile(message: Message, bot: Bot, state: FSMContext):
     # (недозаполненная анкета/правка) — выходим из него, а не молчим.
     await state.clear()
     uid = message.from_user.id
-    creator = await get_creator_by_tg_id(uid)
+    used_cache = False
+    kb = None
+    # Индикатор загрузки, если сбор данных займёт > 0.4с. Из тёплого кэша — мгновенно.
+    async with loading_guard(
+        bot, message.chat.id, delete_trigger=message, text="Загружаю анкету…"
+    ) as lg:
+        creator = await get_creator_by_tg_id(uid)
+        if creator is not None:
+            used_cache = True
+            text = _profile_text(creator) + await _track_record_line(uid)
+            kb = profile_edit_keyboard()
+        else:
+            sheet_data = None
+            try:
+                sheet_data = await sheets_client.profile(uid)
+            except SheetsError as e:
+                logger.warning("live profile fetch failed: %s", e)
+            if sheet_data:
+                fields = {_SHEET_TO_CREATOR[k]: v for k, v in sheet_data.items() if k in _SHEET_TO_CREATOR}
+                await upsert_creator(uid, username=message.from_user.username, fields=fields)
+                text = _profile_text_from_sheet(sheet_data) + await _track_record_line(uid)
+                kb = profile_edit_keyboard()
+            else:
+                text = "У тебя пока нет анкеты. Нажми /start, чтобы заполнить."
 
-    if creator is not None:
-        # Есть кэш → показываем мгновенно ОДНИМ рендером (автоскролл цел).
-        text = _profile_text(creator) + await _track_record_line(uid)
-        sent = await render_screen(
-            bot, message.chat.id, text, reply_markup=profile_edit_keyboard(), delete_trigger=message
-        )
-        # Фон: обновить БД из таблицы и, если изменилось, сам перерисовать экран.
+    sent = await render_screen(
+        bot, message.chat.id, text, reply_markup=kb,
+        delete_trigger=None if lg["shown"] else message,
+    )
+    # Фон: обновить БД из таблицы и, если изменилось, сам перерисовать экран.
+    if used_cache:
         asyncio.create_task(
             _refresh_profile_hybrid(
                 bot, message.chat.id, uid, message.from_user.username, text, sent.message_id
             )
-        )
-        return
-
-    # Кэша нет (первый раз) → показываем анимированную загрузку и тянем из таблицы.
-    await render_loading(bot, message.chat.id, "Загружаю анкету…", delete_trigger=message)
-    sheet_data = None
-    try:
-        sheet_data = await sheets_client.profile(uid)
-    except SheetsError as e:
-        logger.warning("live profile fetch failed: %s", e)
-
-    if sheet_data:
-        fields = {_SHEET_TO_CREATOR[k]: v for k, v in sheet_data.items() if k in _SHEET_TO_CREATOR}
-        await upsert_creator(uid, username=message.from_user.username, fields=fields)
-        text = _profile_text_from_sheet(sheet_data) + await _track_record_line(uid)
-        # delete_trigger=None → правим экран-загрузку на месте (внизу).
-        await render_screen(bot, message.chat.id, text, reply_markup=profile_edit_keyboard())
-    else:
-        await render_screen(
-            bot, message.chat.id, "У тебя пока нет анкеты. Нажми /start, чтобы заполнить."
         )
 
 
@@ -242,20 +244,23 @@ async def edit_receive(message: Message, state: FSMContext, bot: Bot):
     creator = await get_creator_by_tg_id(message.from_user.id)
     sheet_row = getattr(creator, "sheet_row", None) if creator else None
 
-    # 1) обновить только это поле в строке таблицы
-    if sheet_row:
-        try:
-            await sheets_client.update_row(sheet_row, {key: value}, chat_id=message.chat.id)
-        except SheetsError as e:
-            logger.warning("edit field update_row failed: %s", e)
-
-    # 2) обновить локальную БД
-    await upsert_creator(
-        message.from_user.id,
-        username=message.from_user.username,
-        fields={_DB_FIELD.get(key, key): value},
-        sheet_row=sheet_row,
-    )
+    # Запись в таблицу (update_row) — медленная (вебхук), поэтому под индикатором >0.4с.
+    async with loading_guard(
+        bot, message.chat.id, delete_trigger=message, text="Сохраняю…"
+    ) as lg:
+        # 1) обновить только это поле в строке таблицы
+        if sheet_row:
+            try:
+                await sheets_client.update_row(sheet_row, {key: value}, chat_id=message.chat.id)
+            except SheetsError as e:
+                logger.warning("edit field update_row failed: %s", e)
+        # 2) обновить локальную БД
+        await upsert_creator(
+            message.from_user.id,
+            username=message.from_user.username,
+            fields={_DB_FIELD.get(key, key): value},
+            sheet_row=sheet_row,
+        )
 
     # 3) вернуться в меню правки
     await state.set_state(None)
@@ -264,5 +269,5 @@ async def edit_receive(message: Message, state: FSMContext, bot: Bot):
         message.chat.id,
         f"✅ Обновил «{_LABELS.get(key, key)}». Что ещё скорректировать?",
         reply_markup=edit_fields_keyboard(),
-        delete_trigger=message,
+        delete_trigger=None if lg["shown"] else message,
     )

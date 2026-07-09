@@ -15,7 +15,7 @@ from aiogram.types import CallbackQuery, Message
 from bot.config import settings
 from bot.keyboards import BTN_BRANDS, BTN_MY_APPS, brand_card_keyboard, brands_list_keyboard
 from bot.sheets import SheetsError, sheets_client
-from bot.utils.chat_cleanup import current_screen_id, render_loading, render_screen
+from bot.utils.chat_cleanup import current_screen_id, loading_guard, render_screen
 from bot.utils.db_helpers import get_creator_by_tg_id
 
 logger = logging.getLogger(__name__)
@@ -110,31 +110,35 @@ async def show_my_applications(message: Message, bot: Bot):
     from bot.sync import cache_applications, get_cached_applications
 
     uid = message.from_user.id
-    cached = []
-    try:
-        cached = await get_cached_applications(uid)
-    except Exception as e:  # noqa: BLE001
-        logger.warning("cached applications read failed: %s", e)
+    used_cache = False
+    async with loading_guard(
+        bot, message.chat.id, delete_trigger=message, text="Загружаю отклики…"
+    ) as lg:
+        cached = []
+        try:
+            cached = await get_cached_applications(uid)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("cached applications read failed: %s", e)
+        if cached:
+            used_cache = True
+            shown = _apps_text(cached)
+        else:
+            try:
+                fresh = await sheets_client.my_applications(uid)
+                await cache_applications(uid, fresh)
+            except SheetsError as e:
+                logger.warning("my_applications fetch failed: %s", e)
+                fresh = []
+            shown = _apps_text(fresh)
 
-    if cached:
-        # Есть кэш → один рендер мгновенно (автоскролл цел) + гибридное обновление.
-        shown = _apps_text(cached)
-        sent = await render_screen(bot, message.chat.id, shown, delete_trigger=message)
+    sent = await render_screen(
+        bot, message.chat.id, shown, delete_trigger=None if lg["shown"] else message
+    )
+    # Гибридное фоновое обновление — только если показывали из кэша.
+    if used_cache:
         asyncio.create_task(
             _refresh_apps_hybrid(bot, message.chat.id, uid, shown, sent.message_id)
         )
-        return
-
-    # Кэша нет (первый раз) → показываем анимированную загрузку и тянем один раз.
-    await render_loading(bot, message.chat.id, "Загружаю отклики…", delete_trigger=message)
-    try:
-        fresh = await sheets_client.my_applications(uid)
-        await cache_applications(uid, fresh)
-    except SheetsError as e:
-        logger.warning("my_applications fetch failed: %s", e)
-        fresh = []
-    # delete_trigger=None → правим экран-загрузку на месте (внизу).
-    await render_screen(bot, message.chat.id, _apps_text(fresh))
 
 
 def _brands_text(brands, hot) -> str:
@@ -148,23 +152,28 @@ def _brands_text(brands, hot) -> str:
 
 @router.message(F.text == BTN_BRANDS)
 async def show_brands(message: Message, bot: Bot):
-    # Бренды теперь из БД-кэша (мгновенно) — рендерим ОДИН раз, чтобы автоскролл
-    # работал как раньше (двойной рендер с индикатором ломал скролл).
-    brands = await _fetch_brands()
-    creator = await get_creator_by_tg_id(message.from_user.id)
-    brands, hot = _personalize(brands, _creator_categories(creator))
+    # Индикатор загрузки, если чтение брендов/креатора займёт > 0.4с (холодный кэш /
+    # медленная БД). Из тёплого кэша — мгновенно, без мигания.
+    async with loading_guard(
+        bot, message.chat.id, delete_trigger=message, text="Загружаю запросы брендов…"
+    ) as lg:
+        brands = await _fetch_brands()
+        creator = await get_creator_by_tg_id(message.from_user.id)
+        brands, hot = _personalize(brands, _creator_categories(creator))
     await render_screen(
         bot, message.chat.id, _brands_text(brands, hot),
-        reply_markup=brands_list_keyboard(brands, hot), delete_trigger=message,
+        reply_markup=brands_list_keyboard(brands, hot),
+        delete_trigger=None if lg["shown"] else message,
     )
 
 
 @router.callback_query(F.data == "brands:list")
 async def back_to_list(call: CallbackQuery, bot: Bot):
     await call.answer()
-    brands = await _fetch_brands()
-    creator = await get_creator_by_tg_id(call.from_user.id)
-    brands, hot = _personalize(brands, _creator_categories(creator))
+    async with loading_guard(bot, call.message.chat.id, text="Загружаю запросы брендов…"):
+        brands = await _fetch_brands()
+        creator = await get_creator_by_tg_id(call.from_user.id)
+        brands, hot = _personalize(brands, _creator_categories(creator))
     await render_screen(
         bot, call.message.chat.id, _brands_text(brands, hot),
         reply_markup=brands_list_keyboard(brands, hot),
@@ -173,11 +182,12 @@ async def back_to_list(call: CallbackQuery, bot: Bot):
 
 @router.callback_query(F.data.startswith("brand:"))
 async def brand_card(call: CallbackQuery, bot: Bot):
+    await call.answer()
     brand_id = call.data.split(":", 1)[1]
 
-    brands = await _fetch_brands()
-    brand = next((b for b in brands if b.id == brand_id), None)
-    await call.answer()
+    async with loading_guard(bot, call.message.chat.id, text="Загружаю карточку…"):
+        brands = await _fetch_brands()
+        brand = next((b for b in brands if b.id == brand_id), None)
     if brand is None:
         await render_screen(bot, call.message.chat.id, "Этот запрос уже неактуален.", reply_markup=brands_list_keyboard(brands))
         return
