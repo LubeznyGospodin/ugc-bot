@@ -270,14 +270,15 @@ async def submit(call: CallbackQuery, state: FSMContext, bot: Bot):
     try:
         logger.info(f"Saving to sheets: is_edit={is_edit}, sheet_row={sheet_row}")
         if is_edit and sheet_row is not None:
-            # Правим существующую строку, а не плодим дубликат
-            logger.info(f"Updating row {sheet_row}")
-            await sheets_client.update_row(sheet_row, data, chat_id=chat_id)
+            res = await sheets_client.update_row(sheet_row, data, chat_id=chat_id)
+            if not res.get("updated"):
+                # Строку удалили / номер устарел → чужую не трогаем, ДОБАВЛЯЕМ новую.
+                logger.info("update: row gone, appending new")
+                await sheets_client.register_creator(data, chat_id=chat_id)
+                sheet_row = None  # sheet_row самоправится на синке к новой строке
         else:
-            # Новая регистрация
             logger.info("Creating new row")
-            result = await sheets_client.register_creator(data, chat_id=chat_id)
-            logger.info(f"Register result: {result}")
+            await sheets_client.register_creator(data, chat_id=chat_id)
     except SheetsError as e:
         logger.error("register/update failed: %s", e)
         await render_screen(

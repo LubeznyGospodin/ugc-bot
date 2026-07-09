@@ -154,6 +154,12 @@ async def _refresh_profile_hybrid(
         logger.warning("profile refresh failed: %s", e)
         return
     if not data:
+        # Креатора НЕТ в таблице (строку удалили) → не показываем устаревшие данные из
+        # кэша: если юзер всё ещё на экране анкеты, зовём заполнить заново.
+        if current_screen_id(chat_id) == screen_id:
+            await render_screen(
+                bot, chat_id, "У тебя пока нет анкеты в базе. Нажми /start, чтобы добавиться."
+            )
         return
     fields = {_SHEET_TO_CREATOR[k]: v for k, v in data.items() if k in _SHEET_TO_CREATOR}
     await upsert_creator(uid, username=username, fields=fields)  # БД ⇐ таблица
@@ -266,10 +272,12 @@ async def edit_receive(message: Message, state: FSMContext, bot: Bot):
     async with loading_guard(
         bot, message.chat.id, delete_trigger=message, text="Сохраняю…"
     ) as lg:
-        # 1) обновить только это поле в строке таблицы
+        # 1) обновить только это поле в строке таблицы (строка ищется по chat_id)
         if sheet_row:
             try:
-                await sheets_client.update_row(sheet_row, {key: value}, chat_id=message.chat.id)
+                res = await sheets_client.update_row(sheet_row, {key: value}, chat_id=message.chat.id)
+                if not res.get("updated"):
+                    logger.warning("edit: строка креатора %s не найдена в таблице", message.from_user.id)
             except SheetsError as e:
                 logger.warning("edit field update_row failed: %s", e)
         # 2) обновить локальную БД

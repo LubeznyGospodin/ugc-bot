@@ -161,11 +161,14 @@ class SheetsClient:
         payload = await self._post({"action": "lookup", "telegram": telegram, "full_name": full_name})
         return LookupResult.from_payload(payload)
 
-    async def update_row(self, row: int, fields: dict[str, Any], chat_id: int) -> bool:
-        payload = await self._post(
+    async def update_row(self, row: int, fields: dict[str, Any], chat_id: int) -> dict[str, Any]:
+        """Обновить строку креатора (action=update). Строка ищется по Chat ID (номер —
+        только fallback для первого узнавания). Возвращает payload:
+        {ok, updated, notfound, row}. updated=False — строку не нашли (удалена/номер
+        устарел), писать не стали (чужую строку не трогаем) → вызывающий добавит новую."""
+        return await self._post(
             {"action": "update", "row": row, "fields": fields, "chat_id": chat_id}
         )
-        return bool(payload.get("ok"))
 
     async def stats(self) -> StatsResult:
         payload = await self._post({"action": "stats"})
