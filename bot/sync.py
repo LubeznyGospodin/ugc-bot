@@ -139,20 +139,40 @@ async def sync_creators() -> int:
     return len(items)
 
 
+async def _brand_display_name(brand_title: str) -> str:
+    """Человеческое имя бренда для пуша. Если в отклике лежит служебный id (напр.
+    «br2») — подменяем на реальное название из кэша брендов; если названия нет и это
+    похоже на id — возвращаем '' (текст пуша тогда без «br2»)."""
+    import re
+
+    bt = (brand_title or "").strip()
+    if not bt:
+        return ""
+    try:
+        for b in await get_cached_brands():
+            if b.id == bt and b.title:
+                return b.title
+    except Exception:  # noqa: BLE001
+        pass
+    if re.fullmatch(r"br\d+", bt, re.IGNORECASE):
+        return ""  # служебный id без названия — не показываем пользователю
+    return bt
+
+
 async def _notify_status(chat_id: int, brand_title: str, status: str, reason: str) -> None:
     """Пуш креатору при смене статуса отклика. Шлём НАПРЯМУЮ по токену бота
     (не через Apps Script) — надёжно, без хрупкой авторизации триггеров/UrlFetchApp."""
     token = settings.bot_token
     if not token:
         return
+    name = await _brand_display_name(brand_title)
     if status == "оффер":
-        text = (
-            f"🎉 Отличные новости! По бренду «{brand_title}» тебе оффер. "
-            "Скоро свяжемся по деталям."
-        )
+        head = f"По бренду «{name}»" if name else "По твоему отклику"
+        text = f"🎉 Отличные новости! {head} тебе оффер. Скоро свяжемся по деталям."
     else:  # отказ
+        head = f"По бренду «{name}»" if name else "По твоему отклику"
         text = (
-            f"📩 По бренду «{brand_title}» в этот раз не сложилось."
+            f"📩 {head} в этот раз не сложилось."
             + (f" Причина: {reason}" if reason else "")
             + " Впереди новые запросы — не переживай!"
         )

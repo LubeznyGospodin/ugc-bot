@@ -13,7 +13,6 @@
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 
 from aiogram import Bot
@@ -79,7 +78,17 @@ async def render_screen(
     """
     prev_id = _LAST_SCREEN_MSG.get(chat_id)
 
-    # 1) Отправляем новый экран — он оказывается внизу, чат скроллится к нему.
+    # НАДЁЖНЫЙ АВТОСКРОЛЛ: сначала удаляем прошлый экран бота и эхо-ответ юзера,
+    # и только ПОТОМ отправляем новый экран. Отправка — ПОСЛЕДНЕЕ действие, поэтому
+    # новое сообщение гарантированно оказывается самым нижним и клиент проматывает
+    # к нему; ничего после send не сдвигает ленту. Прежний порядок (send→delete)
+    # удалял сообщение НАД новым уже ПОСЛЕ отправки — на части клиентов это уводило
+    # новое сообщение из нижнего края (тот самый «слетевший автоскролл»).
+    if prev_id is not None:
+        await _safe_delete(bot, chat_id, prev_id)
+    if delete_trigger is not None:
+        await _safe_delete(bot, chat_id, delete_trigger.message_id)
+
     # entities и parse_mode взаимоисключающи в Bot API: если переданы entities
     # (напр. custom_emoji анимация загрузки), явно гасим дефолтный parse_mode.
     send_kwargs: dict = {"reply_markup": reply_markup}
@@ -88,20 +97,6 @@ async def render_screen(
         send_kwargs["parse_mode"] = None
     sent = await bot.send_message(chat_id, text, **send_kwargs)
     _LAST_SCREEN_MSG[chat_id] = sent.message_id
-
-    # 1.5) Микро-пауза: даём клиенту (в т.ч. Desktop) закоммитить прокрутку к новому
-    # сообщению ДО удаления старого. Без неё delete прилетает в том же апдейте и
-    # рефлоу списка иногда отменяет автоскролл — отсюда «иногда не срабатывает».
-    await asyncio.sleep(0.12)
-
-    # 2) Теперь убираем предыдущий экран бота (он выше — удаление не трогает низ).
-    if prev_id is not None and prev_id != sent.message_id:
-        await _safe_delete(bot, chat_id, prev_id)
-
-    # 3) И убираем эхо-ответ пользователя, чтобы чат был чистым.
-    if delete_trigger is not None:
-        await _safe_delete(bot, chat_id, delete_trigger.message_id)
-
     return sent
 
 
