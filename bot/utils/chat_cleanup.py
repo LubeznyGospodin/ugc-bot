@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from aiogram import Bot
@@ -78,17 +79,10 @@ async def render_screen(
     """
     prev_id = _LAST_SCREEN_MSG.get(chat_id)
 
-    # НАДЁЖНЫЙ АВТОСКРОЛЛ: сначала удаляем прошлый экран бота и эхо-ответ юзера,
-    # и только ПОТОМ отправляем новый экран. Отправка — ПОСЛЕДНЕЕ действие, поэтому
-    # новое сообщение гарантированно оказывается самым нижним и клиент проматывает
-    # к нему; ничего после send не сдвигает ленту. Прежний порядок (send→delete)
-    # удалял сообщение НАД новым уже ПОСЛЕ отправки — на части клиентов это уводило
-    # новое сообщение из нижнего края (тот самый «слетевший автоскролл»).
-    if prev_id is not None:
-        await _safe_delete(bot, chat_id, prev_id)
-    if delete_trigger is not None:
-        await _safe_delete(bot, chat_id, delete_trigger.message_id)
-
+    # НАДЁЖНЫЙ АВТОСКРОЛЛ:
+    # 1) СНАЧАЛА отправляем новый экран. В этот момент пользователь стоит внизу
+    #    (только что тапнул кнопку/ввёл текст) → входящее сообщение оказывается самым
+    #    нижним и клиент проматывает к нему.
     # entities и parse_mode взаимоисключающи в Bot API: если переданы entities
     # (напр. custom_emoji анимация загрузки), явно гасим дефолтный parse_mode.
     send_kwargs: dict = {"reply_markup": reply_markup}
@@ -97,6 +91,19 @@ async def render_screen(
         send_kwargs["parse_mode"] = None
     sent = await bot.send_message(chat_id, text, **send_kwargs)
     _LAST_SCREEN_MSG[chat_id] = sent.message_id
+
+    # 2) Прошлый экран и эхо-ответ юзера убираем ОТЛОЖЕННО и в ФОНЕ — чтобы удаление
+    #    не гонялось с прокруткой к новому сообщению. Раньше удаление в том же такте
+    #    (хоть до, хоть сразу после send) уводило ленту от нового сообщения — это и
+    #    был «слетевший автоскролл». Теперь скролл успевает устаканиться до чистки.
+    async def _cleanup_prev() -> None:
+        await asyncio.sleep(0.4)
+        if prev_id is not None and prev_id != sent.message_id:
+            await _safe_delete(bot, chat_id, prev_id)
+        if delete_trigger is not None:
+            await _safe_delete(bot, chat_id, delete_trigger.message_id)
+
+    asyncio.create_task(_cleanup_prev())
     return sent
 
 
