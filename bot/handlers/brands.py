@@ -13,7 +13,13 @@ from aiogram import Bot, F, Router
 from aiogram.types import CallbackQuery, Message
 
 from bot.config import settings
-from bot.keyboards import BTN_BRANDS, BTN_MY_APPS, brand_card_keyboard, brands_list_keyboard
+from bot.keyboards import (
+    BTN_BRANDS,
+    BTN_MY_APPS,
+    back_to_list_keyboard,
+    brand_card_keyboard,
+    brands_list_keyboard,
+)
 from bot.sheets import SheetsError, sheets_client
 from bot.utils.chat_cleanup import current_screen_id, loading_guard, render_screen
 from bot.utils.db_helpers import get_creator_by_tg_id
@@ -225,7 +231,7 @@ async def brand_apply(call: CallbackQuery, bot: Bot):
     if res is None:
         await render_screen(
             bot, chat_id, "😔 Не получилось отправить отклик — попробуй ещё раз чуть позже.",
-            reply_markup=brand_card_keyboard(brand_id),
+            reply_markup=back_to_list_keyboard(),
         )
         return
 
@@ -233,13 +239,13 @@ async def brand_apply(call: CallbackQuery, bot: Bot):
     if res.get("duplicate"):
         status = str(res.get("status") or "на рассмотрении").strip().lower()
         text = (
-            f"⚠️ Ты уже откликался на «{brand_title}».\n"
+            f"👀 Вижу, от тебя уже есть отклик на «{brand_title}».\n"
             f"Текущий статус: {_status_line(status)}"
         )
         reason = str(res.get("reason") or "")
         if reason and status in ("оффер", "отказ"):
             text += f"\nПричина: {reason}"
-        await render_screen(bot, chat_id, text, reply_markup=brand_card_keyboard(brand_id))
+        await render_screen(bot, chat_id, text, reply_markup=back_to_list_keyboard())
         return
 
     # Новый отклик: в кэш (мгновенно виден в «Мои отклики») + уведомляем админов.
@@ -258,5 +264,5 @@ async def brand_apply(call: CallbackQuery, bot: Bot):
             logger.warning("failed to notify admin %s about brand response", admin_id)
     await render_screen(
         bot, chat_id, "🎉 Отклик отправлен! Статус смотри в меню «📨 Мои отклики».",
-        reply_markup=brand_card_keyboard(brand_id),
+        reply_markup=back_to_list_keyboard(),
     )

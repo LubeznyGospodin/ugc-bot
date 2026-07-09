@@ -131,6 +131,15 @@ def brand_card_keyboard(brand_id: str) -> InlineKeyboardMarkup:
     )
 
 
+def back_to_list_keyboard() -> InlineKeyboardMarkup:
+    """Только «Назад к списку» — для экранов результата отклика (уже без «Откликнуться»)."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад к списку", callback_data="brands:list")],
+        ]
+    )
+
+
 def admin_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
