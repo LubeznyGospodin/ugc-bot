@@ -216,10 +216,11 @@ class SheetsClient:
         name: str,
         telegram: str,
         chat_id: int,
-    ) -> bool:
-        """Записать отклик креатора на бренд (регистрация на бренд) — action=apply,
-        Apps Script дописывает строку на вкладку "Отклики"."""
-        payload = await self._post(
+    ) -> dict[str, Any]:
+        """Записать отклик на бренд — action=apply. Возвращает payload:
+        {ok, duplicate, status, reason}. duplicate=True — отклик уже существует
+        (тот же Chat ID + Бренд ID), тогда status/reason — текущие по нему."""
+        return await self._post(
             {
                 "action": "apply",
                 "brand_id": brand_id,
@@ -229,7 +230,6 @@ class SheetsClient:
                 "chat_id": chat_id,
             }
         )
-        return bool(payload.get("ok"))
 
     async def my_applications(self, chat_id: int) -> list[Application]:
         """Отклики конкретного креатора со статусом — action=my_applications,

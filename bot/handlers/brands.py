@@ -196,62 +196,67 @@ async def brand_card(call: CallbackQuery, bot: Bot):
     await render_screen(bot, call.message.chat.id, text, reply_markup=brand_card_keyboard(brand.id))
 
 
-async def _record_apply_bg(
-    bot: Bot, brand_id: str, brand_title: str, name: str, telegram: str, chat_id: int, full_name: str
-) -> None:
-    """Фон: пишем отклик в таблицу (с ретраем в _post) и уведомляем админов.
-    Пользователь уже получил подтверждение и отклик уже в БД — таймаут таблицы
-    больше не теряет отклик и не заставляет ждать."""
-    try:
-        await sheets_client.apply(
-            brand_id=brand_id, brand_title=brand_title, name=name,
-            telegram=telegram, chat_id=chat_id,
-        )
-    except SheetsError as e:
-        logger.warning("brand apply sheet write failed (в БД уже есть): %s", e)
-    for admin_id in settings.admin_ids:
-        try:
-            await bot.send_message(
-                admin_id,
-                f"🙋 Отклик на бренд <b>{brand_title}</b> (<code>{brand_id}</code>)\n"
-                f"От: {name or full_name} ({telegram or '—'}), id {chat_id}",
-            )
-        except Exception:
-            logger.warning("failed to notify admin %s about brand response", admin_id)
-
-
 @router.callback_query(F.data.startswith("brand_apply:"))
 async def brand_apply(call: CallbackQuery, bot: Bot):
     from bot.sync import add_cached_application
 
+    await call.answer()
     brand_id = call.data.split(":", 1)[1]
-
-    # Ответ показываем СРАЗУ.
-    await call.answer(
-        "Отклик отправлен! За статусом следи в меню «📨 Мои отклики».",
-        show_alert=True,
-    )
+    chat_id = call.from_user.id
 
     brands = await _fetch_brands()
     brand = next((b for b in brands if b.id == brand_id), None)
     brand_title = brand.title if brand else brand_id
 
-    creator = await get_creator_by_tg_id(call.from_user.id)
+    creator = await get_creator_by_tg_id(chat_id)
     name = (getattr(creator, "full_name", None) if creator else None) or call.from_user.full_name or ""
     telegram = (getattr(creator, "telegram_contact", None) if creator else None) or (
         f"@{call.from_user.username}" if call.from_user.username else ""
     )
 
-    # 1) МГНОВЕННО в БД — отклик гарантированно записан и сразу виден в «Мои отклики».
+    # Отклик пишем СИНХРОННО (под индикатором): нужно поймать дубль и показать статус.
+    async with loading_guard(bot, chat_id, text="Отправляю отклик…"):
+        try:
+            res = await sheets_client.apply(brand_id, brand_title, name, telegram, chat_id)
+        except SheetsError as e:
+            logger.warning("brand apply failed: %s", e)
+            res = None
+
+    if res is None:
+        await render_screen(
+            bot, chat_id, "😔 Не получилось отправить отклик — попробуй ещё раз чуть позже.",
+            reply_markup=brand_card_keyboard(brand_id),
+        )
+        return
+
+    # Повторный отклик запрещён — показываем текущий статус (и причину, если есть).
+    if res.get("duplicate"):
+        status = str(res.get("status") or "на рассмотрении").strip().lower()
+        text = (
+            f"⚠️ Ты уже откликался на «{brand_title}».\n"
+            f"Текущий статус: {_status_line(status)}"
+        )
+        reason = str(res.get("reason") or "")
+        if reason and status in ("оффер", "отказ"):
+            text += f"\nПричина: {reason}"
+        await render_screen(bot, chat_id, text, reply_markup=brand_card_keyboard(brand_id))
+        return
+
+    # Новый отклик: в кэш (мгновенно виден в «Мои отклики») + уведомляем админов.
     try:
-        await add_cached_application(call.from_user.id, brand_title)
+        await add_cached_application(chat_id, brand_title)
     except Exception as e:  # noqa: BLE001
         logger.warning("add_cached_application failed: %s", e)
-
-    # 2) Запись в таблицу + уведомление админов — в ФОНЕ (не блокируем пользователя,
-    #    таймаут таблицы не теряет отклик).
-    asyncio.create_task(
-        _record_apply_bg(
-            bot, brand_id, brand_title, name, telegram, call.from_user.id, call.from_user.full_name
-        )
+    for admin_id in settings.admin_ids:
+        try:
+            await bot.send_message(
+                admin_id,
+                f"🙋 Новый отклик на бренд <b>{brand_title}</b> (<code>{brand_id}</code>)\n"
+                f"От: {name or call.from_user.full_name} ({telegram or '—'}), id {chat_id}",
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("failed to notify admin %s about brand response", admin_id)
+    await render_screen(
+        bot, chat_id, "🎉 Отклик отправлен! Статус смотри в меню «📨 Мои отклики».",
+        reply_markup=brand_card_keyboard(brand_id),
     )
