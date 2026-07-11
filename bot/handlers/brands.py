@@ -215,8 +215,20 @@ async def brand_apply(call: CallbackQuery, bot: Bot):
     brand_title = brand.title if brand else brand_id
 
     creator = await get_creator_by_tg_id(chat_id)
-    name = (getattr(creator, "full_name", None) if creator else None) or call.from_user.full_name or ""
-    telegram = (getattr(creator, "telegram_contact", None) if creator else None) or (
+    # ТРЕБУЕМ РЕГИСТРАЦИЮ: откликаться можно только с заполненной анкетой. Иначе в
+    # «Отклики» попадали люди, которых нет в базе креаторов (нажал /start → сразу
+    # откликнулся, минуя анкету).
+    if creator is None:
+        await render_screen(
+            bot, chat_id,
+            "📝 Чтобы откликаться на бренды, сначала заполни короткую анкету.\n"
+            "Нажми /start — это займёт пару минут.",
+            reply_markup=back_to_list_keyboard(),
+        )
+        return
+
+    name = getattr(creator, "full_name", None) or call.from_user.full_name or ""
+    telegram = getattr(creator, "telegram_contact", None) or (
         f"@{call.from_user.username}" if call.from_user.username else ""
     )
 
