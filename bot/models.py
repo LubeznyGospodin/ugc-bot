@@ -33,7 +33,9 @@ class Creator(Base):
     rate: Mapped[str | None] = mapped_column(String(255), nullable=True)
     portfolio: Mapped[str | None] = mapped_column(Text, nullable=True)
     photo: Mapped[str | None] = mapped_column(Text, nullable=True)
-    age: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Text, а не String(16): креаторы вводят «Возраст» свободно (иногда длинный текст) —
+    # раньше это роняло sync_creators с value too long for character varying(16).
+    age: Mapped[str | None] = mapped_column(Text, nullable=True)
     city: Mapped[str | None] = mapped_column(String(255), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     categories: Mapped[str | None] = mapped_column(String(255), nullable=True)

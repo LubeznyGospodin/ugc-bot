@@ -33,6 +33,8 @@ async def init_db() -> None:
     # Для БД, созданной до появления поля photo, доливаем колонку идемпотентно
     # (повторный запуск/новая таблица — ALTER падает на «дубликат» и гасится).
     await _add_column_if_missing("creators", "photo", "TEXT")
+    # Расширяем age до TEXT: креаторы вводят «Возраст» свободно, varchar(16) ронял синк.
+    await _alter_column_type("creators", "age", "TEXT")
 
 
 async def _add_column_if_missing(table: str, column: str, coltype: str) -> None:
@@ -40,6 +42,18 @@ async def _add_column_if_missing(table: str, column: str, coltype: str) -> None:
         async with engine.begin() as conn:
             await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}"))
     except Exception:  # noqa: BLE001 — колонка уже есть: и Postgres, и SQLite бросают ошибку
+        pass
+
+
+async def _alter_column_type(table: str, column: str, coltype: str) -> None:
+    # Postgres расширяет тип (данные сохраняются). SQLite не поддерживает ALTER COLUMN
+    # TYPE, но там длина varchar и не enforce-ится — ошибку просто гасим.
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(f"ALTER TABLE {table} ALTER COLUMN {column} TYPE {coltype}")
+            )
+    except Exception:  # noqa: BLE001
         pass
 
 
