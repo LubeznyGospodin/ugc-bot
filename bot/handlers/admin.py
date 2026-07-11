@@ -23,8 +23,8 @@ from bot.models import Creator
 from bot.sheets import SheetsError, sheets_client
 from bot.states import BroadcastFSM
 from bot.utils.chat_cleanup import render_screen
-from bot.utils.db_helpers import count_creators, db_stats
-from bot.utils.export import export_creators_xlsx
+from bot.utils.db_helpers import count_creators, funnel_stats
+from bot.utils.export import export_creators_xlsx, export_visits_xlsx
 
 logger = logging.getLogger(__name__)
 router = Router(name="admin")
@@ -49,11 +49,13 @@ async def admin_stats(call: CallbackQuery, bot: Bot):
         return
     await call.answer()
 
-    # Аналитика из БД — мгновенно, без похода в таблицу (раньше падало по таймауту).
-    s = await db_stats()
+    # Воронка CJM из БД — мгновенно, без похода в таблицу.
+    s = await funnel_stats()
     text = (
-        "📊 <b>Аналитика</b>\n\n"
-        f"👤 Креаторов в боте: <b>{s['creators']}</b>\n\n"
+        "📊 <b>Аналитика (воронка CJM)</b>\n\n"
+        f"👋 Всего уникальных заходов: <b>{s['visits']}</b>\n"
+        f"📝 Регистраций: <b>{s['registrations']}</b>\n"
+        f"🙋 Уникальных откликнувшихся: <b>{s['unique_applicants']}</b>\n\n"
         f"📨 Всего откликов: <b>{s['apps']}</b>\n"
         f"• 🎉 Офферов: {s['offers']}\n"
         f"• ❌ Отказов: {s['rejects']}\n"
@@ -138,6 +140,19 @@ async def admin_export(call: CallbackQuery, bot: Bot):
     await bot.send_document(
         call.message.chat.id,
         BufferedInputFile(buf.read(), filename="creators.xlsx"),
+    )
+
+
+@router.callback_query(F.data == "admin:export_visits")
+async def admin_export_visits(call: CallbackQuery, bot: Bot):
+    if not _admin_only(call.from_user.id):
+        await call.answer("Недоступно", show_alert=True)
+        return
+    await call.answer("Формирую список заходов...")
+    buf = await export_visits_xlsx()
+    await bot.send_document(
+        call.message.chat.id,
+        BufferedInputFile(buf.read(), filename="zahody.xlsx"),
     )
 
 

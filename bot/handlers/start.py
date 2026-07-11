@@ -29,7 +29,7 @@ from bot.keyboards import BTN_HELP, confirm_dedup_keyboard, main_menu
 from bot.sheets import LookupResult, SheetsError, sheets_client
 from bot.states import Dedup
 from bot.utils.chat_cleanup import ensure_menu, render_loading, render_screen
-from bot.utils.db_helpers import upsert_creator
+from bot.utils.db_helpers import record_visit, upsert_creator
 
 logger = logging.getLogger(__name__)
 router = Router(name="start")
@@ -46,6 +46,15 @@ def _profile_summary(data: dict) -> str:
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext, bot: Bot):
     await state.clear()
+
+    # Фиксируем ЗАХОД в бот (для воронки CJM) — неблокирующе, дедуп по tg_id. Считаем
+    # всех, кто нажал /start, даже если дальше не пошли.
+    _u = message.from_user
+    _visit_name = " ".join(filter(None, [_u.first_name, _u.last_name])) or None
+    asyncio.create_task(
+        record_visit(_u.id, f"@{_u.username}" if _u.username else None, _visit_name)
+    )
+
     # НЕ забываем прошлый экран: пусть render_screen ниже удалит его (иначе после
     # /start в чате повисает старый экран, напр. «Готово, анкета сохранена»).
 

@@ -55,6 +55,19 @@ class CachedBrand(Base):
     synced_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class BotVisit(Base):
+    """Каждый уникальный пользователь, нажавший /start (даже если не зарегистрировался).
+    Нужно для воронки CJM: заходы → регистрации → уникальные отклики."""
+
+    __tablename__ = "bot_visits"
+
+    tg_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    first_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class CachedApplication(Base):
     """Зеркало вкладки «Отклики» — «Мои отклики» читаются из БД мгновенно."""
 
