@@ -79,6 +79,27 @@ async def db_stats() -> dict[str, int]:
     }
 
 
+async def seed_visits_from_known() -> int:
+    """Разово/идемпотентно: засеять bot_visits теми, кто ТОЧНО нажимал /start — у кого
+    есть chat_id (креаторы в боте + откликнувшиеся). Заходы до появления трекинга иначе
+    не восстановить (в логах /start не писался). Дедуп по tg_id; вернёт число добавленных."""
+    from bot.models import BotVisit, CachedApplication
+
+    now = datetime.utcnow()
+    async with get_session() as session:
+        existing = {v.tg_id for v in (await session.execute(select(BotVisit))).scalars().all()}
+        creators = {c.tg_id for c in (await session.execute(select(Creator))).scalars().all()}
+        apps = {a.chat_id for a in (await session.execute(select(CachedApplication))).scalars().all()}
+        added = 0
+        for tg in (creators | apps):
+            if tg and tg not in existing:
+                session.add(BotVisit(tg_id=tg, first_seen=now, last_seen=now))
+                added += 1
+        if added:
+            await session.commit()
+    return added
+
+
 async def funnel_stats() -> dict[str, int]:
     """Воронка CJM: заходы (/start) → регистрации (креаторы в боте) → уникальные
     отклики (сколько РАЗНЫХ пользователей откликнулись, а не сколько всего откликов)."""

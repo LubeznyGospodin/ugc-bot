@@ -28,6 +28,17 @@ async def main() -> None:
 
     await init_db()
 
+    # Разово засеять счётчик заходов известными chat_id (кто ТОЧНО нажимал /start —
+    # креаторы в боте + откликнувшиеся). Заходы до трекинга иначе не восстановить.
+    try:
+        from bot.utils.db_helpers import seed_visits_from_known
+
+        n = await seed_visits_from_known()
+        if n:
+            logger.info("seed_visits: добавлено %s заходов из известных chat_id", n)
+    except Exception as e:  # noqa: BLE001 — сидинг не критичен, не роняем старт
+        logger.warning("seed_visits failed: %s", e)
+
     bot = Bot(token=settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(root_router)
