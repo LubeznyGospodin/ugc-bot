@@ -157,6 +157,22 @@ async def dedup_reject(call: CallbackQuery, state: FSMContext, bot: Bot):
     await state.set_state(Registration.full_name)
 
 
+@router.callback_query(F.data == "nudge:register")
+async def nudge_register(call: CallbackQuery, state: FSMContext, bot: Bot):
+    """Кнопка из пуш-напоминания — сразу заводим анкету (эти люди ещё не в базе)."""
+    await state.clear()
+    await call.answer()
+    await ensure_menu(bot, call.message.chat.id, main_menu(settings.is_admin(call.from_user.id)))
+    from bot.states import Registration
+
+    await render_screen(
+        bot,
+        call.message.chat.id,
+        "🚀 Отлично! Давай знакомиться.\n\nКак тебя зовут (имя и фамилия)?",
+    )
+    await state.set_state(Registration.full_name)
+
+
 @router.message(F.text == BTN_HELP)
 async def help_handler(message: Message, bot: Bot):
     await render_screen(

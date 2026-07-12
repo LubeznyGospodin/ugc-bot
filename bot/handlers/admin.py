@@ -18,7 +18,12 @@ from sqlalchemy import select
 
 from bot.config import settings
 from bot.database import get_session
-from bot.keyboards import BTN_ADMIN, admin_menu_keyboard, broadcast_confirm_keyboard
+from bot.keyboards import (
+    BTN_ADMIN,
+    admin_menu_keyboard,
+    broadcast_confirm_keyboard,
+    nudge_backlog_confirm_keyboard,
+)
 from bot.models import Creator
 from bot.sheets import SheetsError, sheets_client
 from bot.states import BroadcastFSM
@@ -126,6 +131,57 @@ async def admin_broadcast_send(call: CallbackQuery, state: FSMContext, bot: Bot)
         bot,
         call.message.chat.id,
         f"✅ Рассылка завершена.\nДоставлено: {sent}\nНе удалось: {failed}",
+        reply_markup=admin_menu_keyboard(),
+    )
+
+
+@router.message(Command("nudge_backlog"))
+async def nudge_backlog_start(message: Message, bot: Bot):
+    """Ручная разовая рассылка пуша-напоминания по бэклогу (зашли до запуска фичи,
+    но не зарегистрировались). Показываем число и просим подтвердить."""
+    if not _admin_only(message.from_user.id):
+        return
+    from bot.utils.db_helpers import backlog_unregistered
+
+    ids = await backlog_unregistered()
+    if not ids:
+        await render_screen(bot, message.chat.id, "Бэклог пуст — слать некому 👍", delete_trigger=message)
+        return
+    from bot.nudge import NUDGE_TEXT
+
+    await render_screen(
+        bot,
+        message.chat.id,
+        f"📣 Отправить пуш-напоминание <b>{len(ids)}</b> незарегистрированным?\n\n"
+        f"<i>Текст:</i>\n{NUDGE_TEXT}",
+        reply_markup=nudge_backlog_confirm_keyboard(len(ids)),
+        delete_trigger=message,
+    )
+
+
+@router.callback_query(F.data == "nudge_backlog:cancel")
+async def nudge_backlog_cancel(call: CallbackQuery, bot: Bot):
+    if not _admin_only(call.from_user.id):
+        await call.answer("Недоступно", show_alert=True)
+        return
+    await call.answer("Отменено")
+    await render_screen(bot, call.message.chat.id, "Ок, рассылку отменил.", reply_markup=admin_menu_keyboard())
+
+
+@router.callback_query(F.data == "nudge_backlog:send")
+async def nudge_backlog_send(call: CallbackQuery, bot: Bot):
+    if not _admin_only(call.from_user.id):
+        await call.answer("Недоступно", show_alert=True)
+        return
+    await call.answer("Рассылаю...")
+    await render_screen(bot, call.message.chat.id, "📣 Рассылаю напоминания...")
+    from bot.nudge import send_backlog
+
+    sent, failed = await send_backlog(bot)
+    await render_screen(
+        bot,
+        call.message.chat.id,
+        f"✅ Готово.\nДоставлено: {sent}\nНе удалось: {failed}",
         reply_markup=admin_menu_keyboard(),
     )
 

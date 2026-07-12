@@ -68,6 +68,9 @@ class BotVisit(Base):
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     first_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # Когда отправили пуш-напоминание «доделай анкету». NULL — ещё не слали.
+    # Значение == NUDGE_EPOCH — «зачищено» на старте фичи (бэклог, авто-луп не трогает).
+    nudged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class CachedApplication(Base):

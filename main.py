@@ -39,12 +39,28 @@ async def main() -> None:
     except Exception as e:  # noqa: BLE001 — сидинг не критичен, не роняем старт
         logger.warning("seed_visits failed: %s", e)
 
+    # «Заморозить» текущий бэклог заходов, чтобы авто-луп напоминаний не разослал им
+    # пуш пачкой при деплое — они уйдут отдельно, вручную (/nudge_backlog).
+    try:
+        from bot.utils.db_helpers import grandfather_nudges
+
+        g = await grandfather_nudges()
+        if g:
+            logger.info("grandfather_nudges: помечено %s заходов бэклога", g)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("grandfather_nudges failed: %s", e)
+
     bot = Bot(token=settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(root_router)
 
     # Фоновая синхронизация таблица → БД (бренды и т.д.) — чтения из БД мгновенны.
     asyncio.create_task(run_sync_loop())
+
+    # Пуш-напоминание «доделай анкету» тем, кто зашёл ≥2ч назад и не зарегался.
+    from bot.nudge import run_nudge_loop
+
+    asyncio.create_task(run_nudge_loop(bot))
 
     logger.info("Бот запускается (polling)...")
     await bot.delete_webhook(drop_pending_updates=True)

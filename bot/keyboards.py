@@ -72,6 +72,25 @@ def profile_edit_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def nudge_keyboard() -> InlineKeyboardMarkup:
+    """Кнопка под пуш-напоминанием — сразу запускает заполнение анкеты."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📝 Заполнить анкету", callback_data="nudge:register")],
+        ]
+    )
+
+
+def nudge_backlog_confirm_keyboard(n: int) -> InlineKeyboardMarkup:
+    """Подтверждение ручной рассылки по бэклогу незарегистрированных."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=f"📣 Отправить {n}", callback_data="nudge_backlog:send")],
+            [InlineKeyboardButton(text="Отмена", callback_data="nudge_backlog:cancel")],
+        ]
+    )
+
+
 def edit_fields_keyboard() -> InlineKeyboardMarkup:
     """Меню «что скорректировать?» — по 2 поля в ряд + кнопка Готово."""
     rows: list[list[InlineKeyboardButton]] = []

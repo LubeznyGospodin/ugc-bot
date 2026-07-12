@@ -35,6 +35,8 @@ async def init_db() -> None:
     await _add_column_if_missing("creators", "photo", "TEXT")
     # Расширяем age до TEXT: креаторы вводят «Возраст» свободно, varchar(16) ронял синк.
     await _alter_column_type("creators", "age", "TEXT")
+    # Пуш-напоминание незарегистрированным: когда отправили (NULL — не слали).
+    await _add_column_if_missing("bot_visits", "nudged_at", "TIMESTAMP")
 
 
 async def _add_column_if_missing(table: str, column: str, coltype: str) -> None:

@@ -1,12 +1,18 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
 
 from bot.database import get_session
 from bot.models import Creator
+
+# Момент запуска фичи «пуш-напоминание». Все заходы ДО него — бэклог: авто-луп их не
+# трогает, они помечаются nudged_at == этой меткой на старте (grandfather) и уходят
+# ТОЛЬКО вручную командой /nudge_backlog. Заходы после эпохи → авто-нудж через 2ч.
+NUDGE_EPOCH = datetime(2026, 7, 12, 20, 40, 0)  # UTC
+NUDGE_DELAY = timedelta(hours=2)
 
 
 async def record_visit(tg_id: int, username: str | None, full_name: str | None) -> None:
@@ -98,6 +104,76 @@ async def seed_visits_from_known() -> int:
         if added:
             await session.commit()
     return added
+
+
+async def grandfather_nudges() -> int:
+    """Разово/идемпотентно: пометить все заходы ДО NUDGE_EPOCH как «зачищенные»
+    (nudged_at = NUDGE_EPOCH), чтобы авто-луп не разослал им пуш пачкой при деплое.
+    Бэклог уходит отдельно, вручную (/nudge_backlog). Новые заходы (first_seen после
+    эпохи) сюда не попадают — их шлём автоматически через 2ч."""
+    from bot.models import BotVisit
+
+    async with get_session() as session:
+        rows = (
+            await session.execute(
+                select(BotVisit).where(
+                    BotVisit.nudged_at.is_(None), BotVisit.first_seen < NUDGE_EPOCH
+                )
+            )
+        ).scalars().all()
+        for v in rows:
+            v.nudged_at = NUDGE_EPOCH
+        if rows:
+            await session.commit()
+    return len(rows)
+
+
+async def _registered_ids(session) -> set[int]:
+    return {c.tg_id for c in (await session.execute(select(Creator))).scalars().all()}
+
+
+async def due_nudges() -> list[int]:
+    """tg_id заходов, которым ПОРА слать напоминание: ещё не слали (nudged_at IS NULL),
+    заход был ≥2ч назад, и человек не зарегистрировался (нет в анкетах)."""
+    from bot.models import BotVisit
+
+    cutoff = datetime.utcnow() - NUDGE_DELAY
+    async with get_session() as session:
+        rows = (
+            await session.execute(
+                select(BotVisit).where(
+                    BotVisit.nudged_at.is_(None), BotVisit.first_seen <= cutoff
+                )
+            )
+        ).scalars().all()
+        reg = await _registered_ids(session)
+    return [v.tg_id for v in rows if v.tg_id not in reg]
+
+
+async def backlog_unregistered() -> list[int]:
+    """tg_id бэклога (заходы до эпохи, помеченные grandfather) без регистрации — для
+    ручной рассылки /nudge_backlog. После отправки отмечаем mark_nudged → повторно не уйдёт."""
+    from bot.models import BotVisit
+
+    async with get_session() as session:
+        rows = (
+            await session.execute(
+                select(BotVisit).where(BotVisit.nudged_at == NUDGE_EPOCH)
+            )
+        ).scalars().all()
+        reg = await _registered_ids(session)
+    return [v.tg_id for v in rows if v.tg_id not in reg]
+
+
+async def mark_nudged(tg_id: int) -> None:
+    """Отметить, что пуш отправлен (реальным временем) — больше этому tg_id не шлём."""
+    from bot.models import BotVisit
+
+    async with get_session() as session:
+        v = (await session.execute(select(BotVisit).where(BotVisit.tg_id == tg_id))).scalar_one_or_none()
+        if v is not None:
+            v.nudged_at = datetime.utcnow()
+            await session.commit()
 
 
 async def funnel_stats() -> dict[str, int]:
