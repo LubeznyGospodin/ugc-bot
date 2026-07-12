@@ -264,13 +264,16 @@ async def brand_apply(call: CallbackQuery, bot: Bot):
         await add_cached_application(chat_id, brand_title)
     except Exception as e:  # noqa: BLE001
         logger.warning("add_cached_application failed: %s", e)
+    creator_ig = (getattr(creator, "instagram", None) if creator else None) or ""
+    admin_text = (
+        f"🙋 Новый отклик на бренд <b>{brand_title}</b> (<code>{brand_id}</code>)\n"
+        f"От: {name or call.from_user.full_name} ({telegram or '—'}), id {chat_id}"
+    )
+    if creator_ig:
+        admin_text += f"\nInstagram: {creator_ig}"
     for admin_id in settings.admin_ids:
         try:
-            await bot.send_message(
-                admin_id,
-                f"🙋 Новый отклик на бренд <b>{brand_title}</b> (<code>{brand_id}</code>)\n"
-                f"От: {name or call.from_user.full_name} ({telegram or '—'}), id {chat_id}",
-            )
+            await bot.send_message(admin_id, admin_text)
         except Exception:  # noqa: BLE001
             logger.warning("failed to notify admin %s about brand response", admin_id)
     await render_screen(
