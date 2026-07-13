@@ -91,7 +91,7 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot):
             bot,
             message.chat.id,
             "🆕 Не нашёл тебя в наших списках — давай знакомиться!\n\n"
-            "Как тебя зовут (имя и фамилия)?",
+            "📋 <b>Шаг 1 из 10</b>\n\nКак тебя зовут (имя и фамилия)?",
         )
         from bot.states import Registration
 
@@ -152,7 +152,8 @@ async def dedup_reject(call: CallbackQuery, state: FSMContext, bot: Bot):
     await render_screen(
         bot,
         call.message.chat.id,
-        "Хорошо, оформим тебя как нового креатора 🙂\n\nКак тебя зовут (имя и фамилия)?",
+        "Хорошо, оформим тебя как нового креатора 🙂\n\n"
+        "📋 <b>Шаг 1 из 10</b>\n\nКак тебя зовут (имя и фамилия)?",
     )
     await state.set_state(Registration.full_name)
 
@@ -168,7 +169,8 @@ async def nudge_register(call: CallbackQuery, state: FSMContext, bot: Bot):
     await render_screen(
         bot,
         call.message.chat.id,
-        "🚀 Отлично! Давай знакомиться.\n\nКак тебя зовут (имя и фамилия)?",
+        "🚀 Отлично! Давай знакомиться.\n\n"
+        "📋 <b>Шаг 1 из 10</b>\n\nКак тебя зовут (имя и фамилия)?",
     )
     await state.set_state(Registration.full_name)
 
