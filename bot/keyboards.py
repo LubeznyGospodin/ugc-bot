@@ -37,7 +37,7 @@ BTN_SHARE_CONTACT = "📱 Поделиться контактом"
 BTN_PROFILE = "🧾 Моя анкета"
 BTN_BRANDS = "🎯 Запросы брендов"
 BTN_MY_APPS = "📨 Мои отклики"
-BTN_HELP = "💬 Помощь"
+BTN_HELP = "💬 Задать вопрос"
 BTN_ADMIN = "🛠 Админка"
 
 
@@ -68,6 +68,15 @@ def profile_edit_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="✏️ Обновить данные", callback_data="profile:edit")],
+        ]
+    )
+
+
+def ask_question_keyboard() -> InlineKeyboardMarkup:
+    """Кнопка-ссылка на HR — для «Задать вопрос»."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✍️ Написать @packman_hr", url="https://t.me/packman_hr")],
         ]
     )
 

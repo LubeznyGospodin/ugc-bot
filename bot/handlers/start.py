@@ -25,7 +25,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from bot.config import settings
-from bot.keyboards import BTN_HELP, confirm_dedup_keyboard, main_menu
+from bot.keyboards import BTN_HELP, ask_question_keyboard, confirm_dedup_keyboard, main_menu
 from bot.sheets import LookupResult, SheetsError, sheets_client
 from bot.states import Dedup
 from bot.utils.chat_cleanup import ensure_menu, render_loading, render_screen
@@ -173,15 +173,15 @@ async def nudge_register(call: CallbackQuery, state: FSMContext, bot: Bot):
     await state.set_state(Registration.full_name)
 
 
-@router.message(F.text == BTN_HELP)
+# Ловим и новый ярлык, и старый «💬 Помощь» — у кого меню ещё не обновилось после
+# деплоя, старая кнопка продолжает работать (иначе нажатие проваливалось бы впустую).
+@router.message(F.text.in_({BTN_HELP, "💬 Помощь"}))
 async def help_handler(message: Message, bot: Bot):
     await render_screen(
         bot,
         message.chat.id,
-        "ℹ️ Это бот UGC-креаторов Packman Production.\n\n"
-        "🧾 Моя анкета — посмотреть/обновить свои данные\n"
-        "🎯 Запросы брендов — актуальные проекты для отклика\n"
-        "📨 Мои отклики — статус твоих откликов на бренды\n\n"
-        "Если что-то не работает — напишите в чат команды.",
+        "💬 Есть вопрос? Напиши нашему HR — <a href=\"https://t.me/packman_hr\">@packman_hr</a>, "
+        "поможем и подскажем.",
+        reply_markup=ask_question_keyboard(),
         delete_trigger=message,
     )
