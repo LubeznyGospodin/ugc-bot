@@ -107,11 +107,13 @@ class Application:
 class SheetsClient:
     """Тонкая обёртка над одним POST-эндпоинтом Apps Script."""
 
-    def __init__(self, webhook_url: str | None = None, secret: str | None = None, timeout: int = 8):
+    def __init__(self, webhook_url: str | None = None, secret: str | None = None, timeout: int = 25):
         self.webhook_url = webhook_url or settings.sheets_webhook_url
         self.secret = secret or settings.sheets_webhook_secret
-        # Жестче таймаут: 8 сек (было 10, еще жестче connect/read)
-        self.timeout = aiohttp.ClientTimeout(total=timeout, sock_connect=3, sock_read=3)
+        # Apps Script на update_row (читает лист + пишет ячейки) нередко отвечает 3–8с,
+        # а под нагрузкой/холодным стартом дольше. Прежние sock_read=3с роняли сохранение
+        # анкеты КАЖДЫЙ раз. Даём нормальный запас: read до 20с, весь запрос до 25с.
+        self.timeout = aiohttp.ClientTimeout(total=timeout, sock_connect=5, sock_read=20)
 
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
         if not self.webhook_url:
@@ -124,7 +126,8 @@ class SheetsClient:
 
         text = None
         last_exc: Exception | None = None
-        for attempt in range(2):
+        attempts = 3
+        for attempt in range(attempts):
             try:
                 async with aiohttp.ClientSession(timeout=self.timeout) as session:
                     async with session.post(self.webhook_url, json=body) as resp:
@@ -134,8 +137,8 @@ class SheetsClient:
                 break
             except (aiohttp.ClientError, _asyncio.TimeoutError) as e:
                 last_exc = e
-                if attempt == 0:
-                    await _asyncio.sleep(0.4)
+                if attempt < attempts - 1:
+                    await _asyncio.sleep(0.5 * (attempt + 1))  # 0.5с, 1.0с
                     continue
                 raise SheetsError(f"Сетевая ошибка: {e}") from e
         if text is None:
