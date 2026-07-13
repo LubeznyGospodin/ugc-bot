@@ -180,8 +180,9 @@ async def help_handler(message: Message, bot: Bot):
     await render_screen(
         bot,
         message.chat.id,
-        "💬 Есть вопрос? Напиши нашему HR — <a href=\"https://t.me/packman_hr\">@packman_hr</a>, "
-        "поможем и подскажем.",
+        "💬 Есть любой вопрос? Пиши команде 👋\n\n"
+        "Там все: Игорь, Аделия, Даня, Иван, Настя и Дюша Метелкин. "
+        "Мы живые и обнимательные 🤗, и с нами всегда можно договориться 🙌",
         reply_markup=ask_question_keyboard(),
         delete_trigger=message,
     )
