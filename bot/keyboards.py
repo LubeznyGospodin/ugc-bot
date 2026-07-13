@@ -124,6 +124,16 @@ def skip_photo_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def photo_done_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура шага «фото», когда уже прислали фото: «Готово» + «Добавить позже»."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Готово, фото загрузил", callback_data="reg:photo_done")],
+            [InlineKeyboardButton(text="⏭ Добавить позже", callback_data="reg:photo_skip")],
+        ]
+    )
+
+
 def contact_request_keyboard() -> ReplyKeyboardMarkup:
     """Клавиатура «Поделиться контактом» — Telegram отдаёт номер телефона."""
     return ReplyKeyboardMarkup(

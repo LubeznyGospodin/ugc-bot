@@ -12,7 +12,7 @@ import logging
 
 from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InputMediaPhoto, Message
 
 from bot.categories import categories_keyboard
 from bot.config import settings
@@ -25,6 +25,7 @@ from bot.keyboards import (
     BTN_SHARE_CONTACT,
     contact_request_keyboard,
     main_menu,
+    photo_done_keyboard,
     profile_edit_keyboard,
     skip_photo_keyboard,
 )
@@ -38,15 +39,23 @@ router = Router(name="registration")
 
 _MENU_BTNS = [BTN_PROFILE, BTN_BRANDS, BTN_MY_APPS, BTN_HELP, BTN_ADMIN]
 
+# Фото, присланные прямо в чат на шаге «фото», копим в памяти по chat_id (list.append
+# в одном event-loop без await между get и append — гонки нет, в отличие от FSM-хранилища,
+# куда альбом из N сообщений писал бы конкурентно). Забираем на «Готово»/submit.
+_photo_buffer: dict[int, list[str]] = {}
+_MAX_FWD = 10  # столько фото Telegram отдаёт одной медиагруппой
+
 STEP_PROMPTS = {
     Registration.instagram: "Ссылка на Instagram (или другую соцсеть с примерами работ)?",
     Registration.other_socials: "Другие соцсети (TikTok/YouTube и т.д.)? Если нет — напиши «нет».",
     Registration.rate: "Желаемая оплата за 1 ролик под ключ?",
     Registration.portfolio: "Ссылка на портфолио/примеры работ?",
     Registration.photo: (
-        "🖼 Ссылка на твои фото в хорошем качестве (идеально студийные, не менее 4 фото).\n\n"
-        "Это нужно для добавления в базу креаторов: https://t.me/ugc_creatory.\n\n"
-        "Можно добавить позже"
+        "🖼 Пришли свои фото в хорошем качестве (идеально студийные, не менее 4 фото).\n\n"
+        "📎 Можно отправить фото <b>прямо сюда</b> — по одному или альбомом. "
+        "Либо вставь ссылку на них.\n\n"
+        "Это нужно для базы креаторов: https://t.me/ugc_creatory.\n\n"
+        "Когда загрузишь все фото — жми «✅ Готово». Или «Добавить позже»."
     ),
     Registration.age: "Сколько тебе лет?",
     Registration.city: "В каком городе живёшь?",
@@ -126,11 +135,51 @@ async def _ask_photo(chat_id: int, state: FSMContext, bot: Bot, trigger: Message
     )
 
 
+# Регистрируется РАНЬШЕ дженерик-цикла (по порядку в файле) → фото на шаге «фото»
+# перехватывает этот хендлер, а не защита «напиши текстом».
+@router.message(Registration.photo, F.photo)
+async def photo_upload(message: Message, state: FSMContext, bot: Bot):
+    """Креатор прислал фото прямо в чат (одно или альбомом). Копим file_id, при
+    завершении регистрации перешлём команде. На альбом не спамим — экран рисуем
+    только на первом фото."""
+    buf = _photo_buffer.setdefault(message.chat.id, [])
+    buf.append(message.photo[-1].file_id)  # берём максимальное разрешение
+    n = len(buf)  # синхронно после append — гонки в альбоме нет
+    if n == 1:
+        await render_screen(
+            bot,
+            message.chat.id,
+            "📸 Принял фото! Пришли ещё, если нужно.\n\nКогда всё загрузишь — жми «✅ Готово».",
+            reply_markup=photo_done_keyboard(),
+            delete_trigger=message,
+        )
+    else:
+        # следующие фото просто убираем из чата, экран не трогаем.
+        try:
+            await bot.delete_message(message.chat.id, message.message_id)
+        except Exception:  # noqa: BLE001
+            pass
+
+
 async def _generic_step(message: Message, state: FSMContext, bot: Bot):
+    # Пришло не текстом (фото/стикер/видео) — не роняем шаг (раньше message.text.strip()
+    # падал на None и опрос «зависал»). Фото на шаге фото ловит отдельный хендлер ниже;
+    # прочий не-текст просто игнорируем и мягко просим текст.
+    if message.text is None:
+        await render_screen(
+            bot, message.chat.id, "Напиши, пожалуйста, ответ текстом 🙂", delete_trigger=message
+        )
+        return
     current = await state.get_state()
     current_enum = next(s for s in STEP_ORDER if s.state == current)
     field = FIELD_BY_STATE[current_enum]
     await state.update_data(**{field: message.text.strip()})
+    # На шаге фото прислали ссылку текстом — но могли ДО этого кинуть и фото в чат.
+    # Забираем накопленное, чтобы тоже переслать команде.
+    if current_enum == Registration.photo:
+        ids = _photo_buffer.pop(message.chat.id, [])
+        if ids:
+            await state.update_data(photo_ids=ids)
 
     nxt = _next_state(current_enum)
     if nxt == Registration.phone:
@@ -167,11 +216,23 @@ async def phone_via_text(message: Message, state: FSMContext, bot: Bot):
     await _after_phone(message.chat.id, state, bot, message, message.from_user.id)
 
 
+@router.callback_query(Registration.photo, F.data == "reg:photo_done")
+async def photo_done(call: CallbackQuery, state: FSMContext, bot: Bot):
+    """«Готово» на шаге фото — фиксируем присланные фото и идём дальше к возрасту."""
+    await call.answer()
+    ids = _photo_buffer.pop(call.message.chat.id, [])
+    n = len(ids)
+    await state.update_data(photo=(f"📷 {n} фото загружено в бот" if n else ""), photo_ids=ids)
+    await state.set_state(Registration.age)
+    await render_screen(bot, call.message.chat.id, STEP_PROMPTS[Registration.age])
+
+
 @router.callback_query(Registration.photo, F.data == "reg:photo_skip")
 async def photo_skip(call: CallbackQuery, state: FSMContext, bot: Bot):
     """«Добавить позже» на шаге фото — пропускаем, идём дальше к возрасту."""
     await call.answer()
-    await state.update_data(photo="")
+    _photo_buffer.pop(call.message.chat.id, None)  # если что-то накидали, но передумали
+    await state.update_data(photo="", photo_ids=[])
     await state.set_state(Registration.age)
     await render_screen(bot, call.message.chat.id, STEP_PROMPTS[Registration.age])
 
@@ -251,6 +312,9 @@ async def restart(call: CallbackQuery, state: FSMContext, bot: Bot):
 async def submit(call: CallbackQuery, state: FSMContext, bot: Bot):
     data = await state.get_data()
     data["category"] = ", ".join(data.pop("categories", []) or [])
+    # photo_ids — служебное (file_id присланных фото), в таблицу НЕ шлём, а пересылаем
+    # команде после сохранения.
+    photo_ids = data.pop("photo_ids", None) or []
     chat_id = call.message.chat.id
     tg_id = call.from_user.id
 
@@ -291,9 +355,32 @@ async def submit(call: CallbackQuery, state: FSMContext, bot: Bot):
     await upsert_creator(tg_id, username=call.from_user.username, fields=data, sheet_row=sheet_row)
     await state.clear()
 
+    # Фото, присланные в чат, пересылаем команде (в таблице у креатора — пометка).
+    if photo_ids:
+        await _forward_photos_to_admins(
+            bot, data.get("full_name"), data.get("telegram"), chat_id, photo_ids
+        )
+
     await render_screen(
         bot,
         chat_id,
         "🎉 Готово! Анкета сохранена. Мы на связи, если появятся подходящие проекты.",
         reply_markup=profile_edit_keyboard(),
     )
+
+
+async def _forward_photos_to_admins(
+    bot: Bot, name: str | None, telegram: str | None, chat_id: int, ids: list[str]
+) -> None:
+    """Переслать присланные креатором фото админам (в таблицу они не влезают)."""
+    ids = ids[:_MAX_FWD]
+    header = f"📷 Фото креатора {name or '—'} ({telegram or '—'}, id {chat_id})"
+    for admin_id in settings.admin_ids:
+        try:
+            await bot.send_message(admin_id, header)
+            if len(ids) == 1:
+                await bot.send_photo(admin_id, ids[0])
+            else:
+                await bot.send_media_group(admin_id, [InputMediaPhoto(media=fid) for fid in ids])
+        except Exception as e:  # noqa: BLE001
+            logger.warning("forward photos to admin %s failed: %s", admin_id, e)
