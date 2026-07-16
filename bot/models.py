@@ -73,6 +73,24 @@ class BotVisit(Base):
     nudged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class CreatorPhoto(Base):
+    """file_id фото/файлов, присланных креатором в бота на шаге «фото».
+
+    Храним, чтобы их можно было отправить куда угодно в любой момент (в группу, повторно
+    и т.д.). Раньше file_id жили только в памяти на время анкеты и выбрасывались после
+    отправки админам — из-за этого фото 28 креаторов невозможно переслать задним числом."""
+
+    __tablename__ = "creator_photos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tg_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    kind: Mapped[str] = mapped_column(String(16), default="photo")  # photo | doc
+    file_id: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # Куда уже отправляли (чтобы не слать в группу дважды).
+    sent_to_chat: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class CachedApplication(Base):
     """Зеркало вкладки «Отклики» — «Мои отклики» читаются из БД мгновенно."""
 

@@ -395,8 +395,10 @@ async def submit(call: CallbackQuery, state: FSMContext, bot: Bot):
     await upsert_creator(tg_id, username=call.from_user.username, fields=data, sheet_row=sheet_row)
     await state.clear()
 
-    # Фото, присланные в чат, пересылаем команде (в таблице у креатора — пометка).
+    # Фото, присланные в чат: СНАЧАЛА сохраняем file_id в БД (чтобы их можно было
+    # отправить повторно/в другое место), затем шлём в рабочую группу.
     if photo_ids:
+        await _save_photo_ids(tg_id, photo_ids)
         await _forward_photos_to_admins(
             bot, data.get("full_name"), data.get("telegram"), chat_id, photo_ids
         )
@@ -422,19 +424,35 @@ async def _send_media_group(bot: Bot, admin_id: int, media_cls, ids: list[str]) 
         await bot.send_media_group(admin_id, [media_cls(media=fid) for fid in ids])
 
 
+async def _save_photo_ids(tg_id: int, items: list[tuple[str, str]]) -> None:
+    """Сохранить file_id в БД — чтобы фото можно было отправить повторно/куда угодно."""
+    from bot.database import get_session
+    from bot.models import CreatorPhoto
+
+    try:
+        async with get_session() as session:
+            for kind, fid in items:
+                session.add(CreatorPhoto(tg_id=tg_id, kind=kind, file_id=fid))
+            await session.commit()
+    except Exception as e:  # noqa: BLE001 — потеря анкеты из-за этого недопустима
+        logger.warning("save photo ids failed for %s: %s", tg_id, e)
+
+
 async def _forward_photos_to_admins(
     bot: Bot, name: str | None, telegram: str | None, chat_id: int, items: list[tuple[str, str]]
 ) -> None:
-    """Переслать присланные креатором фото/файлы админам (в таблицу они не влезают).
-    Фото и документы шлём раздельными медиагруппами — смешивать типы нельзя."""
+    """Отправить присланные креатором фото/файлы в рабочую группу (PHOTOS_CHAT_ID), а если
+    она не задана — админам в личку, как раньше. Фото и документы шлём раздельными
+    медиагруппами — смешивать типы нельзя."""
     items = items[:_MAX_FWD]
     photos = [fid for kind, fid in items if kind == "photo"]
     docs = [fid for kind, fid in items if kind == "doc"]
     header = f"📷 Фото креатора {name or '—'} ({telegram or '—'}, id {chat_id})"
-    for admin_id in settings.admin_ids:
+    targets = [settings.photos_chat_id] if settings.photos_chat_id else list(settings.admin_ids)
+    for target in targets:
         try:
-            await bot.send_message(admin_id, header)
-            await _send_media_group(bot, admin_id, InputMediaPhoto, photos)
-            await _send_media_group(bot, admin_id, InputMediaDocument, docs)
+            await bot.send_message(target, header)
+            await _send_media_group(bot, target, InputMediaPhoto, photos)
+            await _send_media_group(bot, target, InputMediaDocument, docs)
         except Exception as e:  # noqa: BLE001
-            logger.warning("forward photos to admin %s failed: %s", admin_id, e)
+            logger.warning("send photos to %s failed: %s", target, e)

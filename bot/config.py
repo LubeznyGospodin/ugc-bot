@@ -55,6 +55,9 @@ class Settings:
     )
     sheets_webhook_url: str = field(default_factory=lambda: os.getenv("SHEETS_WEBHOOK_URL", ""))
     sheets_webhook_secret: str = field(default_factory=lambda: os.getenv("SHEETS_WEBHOOK_SECRET", ""))
+    # Группа, куда шлём фото креаторов. Пусто → шлём админам в личку (как раньше).
+    # id группы узнать: добавить бота в группу и отправить там /chatid.
+    photos_chat_id: str = field(default_factory=lambda: os.getenv("PHOTOS_CHAT_ID", "").strip())
 
     # Пороги confidence для дедупа (см. doLookup_ в Apps Script — держим синхронно)
     lookup_auto_match_threshold: float = 0.92

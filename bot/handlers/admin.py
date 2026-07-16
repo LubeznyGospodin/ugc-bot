@@ -135,6 +135,44 @@ async def admin_broadcast_send(call: CallbackQuery, state: FSMContext, bot: Bot)
     )
 
 
+@router.message(Command("chatid"))
+async def chat_id_cmd(message: Message, bot: Bot):
+    """Показать id текущего чата — так узнаём id группы для PHOTOS_CHAT_ID.
+    Работает и в группе: добавь бота в группу и отправь там /chatid."""
+    if not _admin_only(message.from_user.id):
+        return
+    await message.reply(
+        f"🆔 id этого чата: <code>{message.chat.id}</code>\n"
+        f"тип: {message.chat.type}\n"
+        f"название: {message.chat.title or '—'}"
+    )
+
+
+@router.message(Command("photos_to_group"))
+async def photos_to_group(message: Message, bot: Bot):
+    """Отправить в рабочую группу все сохранённые фото креаторов, которые туда ещё не
+    отправляли. Работает только для фото, присланных ПОСЛЕ появления сохранения file_id."""
+    if not _admin_only(message.from_user.id):
+        return
+    if not settings.photos_chat_id:
+        await render_screen(
+            bot, message.chat.id,
+            "⚠️ Группа не задана. Добавь бота в группу, отправь там /chatid "
+            "и пришли мне id — пропишу в PHOTOS_CHAT_ID.",
+            delete_trigger=message,
+        )
+        return
+    from bot.utils.photo_sender import send_stored_photos
+
+    await render_screen(bot, message.chat.id, "📤 Отправляю фото в группу…", delete_trigger=message)
+    creators, photos, failed = await send_stored_photos(bot, settings.photos_chat_id)
+    await render_screen(
+        bot, message.chat.id,
+        f"✅ Готово.\nКреаторов: {creators}\nФото отправлено: {photos}\nНе удалось: {failed}",
+        reply_markup=admin_menu_keyboard(),
+    )
+
+
 @router.message(Command("nudge_backlog"))
 async def nudge_backlog_start(message: Message, bot: Bot):
     """Ручная разовая рассылка пуша-напоминания по бэклогу (зашли до запуска фичи,
