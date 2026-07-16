@@ -184,7 +184,8 @@ def admin_menu_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="📊 Аналитика", callback_data="admin:stats")],
             [InlineKeyboardButton(text="📣 Рассылка", callback_data="admin:broadcast")],
             [InlineKeyboardButton(text="📤 Экспорт креаторов", callback_data="admin:export")],
-            [InlineKeyboardButton(text="📥 Экспорт заходов", callback_data="admin:export_visits")],
+            [InlineKeyboardButton(text="📥 Экспорт заходов (все)", callback_data="admin:export_visits")],
+            [InlineKeyboardButton(text="🙈 Экспорт: заходили, но не зарегались", callback_data="admin:export_unreg")],
         ]
     )
 
