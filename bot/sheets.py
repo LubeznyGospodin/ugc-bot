@@ -160,8 +160,18 @@ class SheetsClient:
         return await self._post(payload)
 
     # --- новые действия ---
-    async def lookup(self, telegram: str, full_name: str) -> LookupResult:
-        payload = await self._post({"action": "lookup", "telegram": telegram, "full_name": full_name})
+    async def lookup(self, telegram: str, full_name: str, chat_id: int | None = None) -> LookupResult:
+        """Опознание строки креатора по КОНСТАНТАМ: chat_id (надёжнее всего — работает и
+        после смены хендла), затем телеграм-хендл. Имя в решении не участвует: в строке
+        может стоять имя креатора, а в аккаунте — совсем другое."""
+        payload = await self._post(
+            {
+                "action": "lookup",
+                "telegram": telegram,
+                "full_name": full_name,
+                "chat_id": chat_id or "",
+            }
+        )
         return LookupResult.from_payload(payload)
 
     async def update_row(

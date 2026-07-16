@@ -72,7 +72,10 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot):
     # индикатор, и мы его дожидаемся сразу как пришёл ответ.
     async def _do_lookup() -> LookupResult:
         try:
-            return await sheets_client.lookup(telegram_handle, full_name_guess)
+            # chat_id — чтобы узнать даже того, кто сменил телеграм-хендл.
+            return await sheets_client.lookup(
+                telegram_handle, full_name_guess, chat_id=message.from_user.id
+            )
         except SheetsError as e:
             logger.warning("lookup failed: %s", e)
             return LookupResult(found=False)
