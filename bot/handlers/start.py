@@ -112,7 +112,9 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot):
     await state.set_state(Dedup.waiting_confirmation)
 
 
-async def _finish_recognized(bot: Bot, chat_id: int, tg_id: int, result: LookupResult) -> None:
+async def _finish_recognized(
+    bot: Bot, chat_id: int, tg_id: int, result: LookupResult, telegram: str = ""
+) -> None:
     # Экран показываем СРАЗУ (правка дедуп-экрана на месте — мгновенно, внизу). Запись
     # «Есть в боте»=да/Chat ID в таблицу и БД — в ФОНЕ, чтобы вебхук не задерживал показ.
     text = (
@@ -124,7 +126,8 @@ async def _finish_recognized(bot: Bot, chat_id: int, tg_id: int, result: LookupR
 
     async def _persist() -> None:
         try:
-            await sheets_client.update_row(result.row, {}, chat_id=chat_id)
+            # telegram — для сверки личности на сервере перед привязкой Chat ID к строке.
+            await sheets_client.update_row(result.row, {}, chat_id=chat_id, telegram=telegram)
         except SheetsError as e:
             logger.warning("update_row on recognize failed: %s", e)
         await upsert_creator(tg_id, username=None, fields=result.data or {}, sheet_row=result.row)
@@ -140,7 +143,8 @@ async def dedup_confirm(call: CallbackQuery, state: FSMContext, bot: Bot):
     result = LookupResult(found=True, row=row, data=profile)
     await state.clear()
     await call.answer()  # без попапа — результат виден на экране
-    await _finish_recognized(bot, call.message.chat.id, call.from_user.id, result)
+    tg_handle = f"@{call.from_user.username}" if call.from_user.username else ""
+    await _finish_recognized(bot, call.message.chat.id, call.from_user.id, result, tg_handle)
 
 
 @router.callback_query(F.data == "dedup:reject")

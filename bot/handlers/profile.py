@@ -272,10 +272,15 @@ async def edit_receive(message: Message, state: FSMContext, bot: Bot):
     async with loading_guard(
         bot, message.chat.id, delete_trigger=message, text="Сохраняю…"
     ) as lg:
-        # 1) обновить только это поле в строке таблицы (строка ищется по chat_id)
+        # 1) обновить только это поле в строке таблицы. Строка опознаётся по chat_id, а
+        # телеграм передаём для сверки личности — сервер меняет ячейку, только если И
+        # chat_id, И телеграм совпали с этой строкой.
         if sheet_row:
             try:
-                res = await sheets_client.update_row(sheet_row, {key: value}, chat_id=message.chat.id)
+                tg_handle = f"@{message.from_user.username}" if message.from_user.username else ""
+                res = await sheets_client.update_row(
+                    sheet_row, {key: value}, chat_id=message.chat.id, telegram=tg_handle
+                )
                 if not res.get("updated"):
                     logger.warning("edit: строка креатора %s не найдена в таблице", message.from_user.id)
             except SheetsError as e:
