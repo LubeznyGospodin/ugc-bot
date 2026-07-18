@@ -34,6 +34,23 @@ _STATUS_VIEW = {
     "оффер": "🎉 Оффер!",
 }
 
+# Важное сообщение ПОСЛЕ отклика — по конкретным брендам (инструкция + план работы).
+# Показывается и на новом отклике, и при повторном (чтобы человек не потерял инструкцию).
+_POST_APPLY_NOTE = {
+    "br1": (
+        "❗️<b>ВАЖНО!</b> Для начала работы напиши нам в "
+        '<a href="https://t.me/packman_hr">@packman_hr</a> фразу «Отклик на сингл» — '
+        "мы ускоренно проверим и подтвердим твою анкету, и можно будет сразу создавать ролик!\n\n"
+        "<b>План работы:</b>\n"
+        "1️⃣ Сначала делаем 1 ролик\n"
+        "2️⃣ Утверждаем с нами\n"
+        "3️⃣ Постим во все соцсети (важно! в этом проекте вы постите в свои соцсети, "
+        "но без призывов и ссылок)\n"
+        "4️⃣ Оцениваем охваты\n"
+        "5️⃣ Если совокупный охват хороший — заказываем ещё ролики"
+    ),
+}
+
 
 def _status_line(status: str) -> str:
     return _STATUS_VIEW.get((status or "").strip().lower(), "🕐 На рассмотрении")
@@ -256,6 +273,9 @@ async def brand_apply(call: CallbackQuery, bot: Bot):
         reason = str(res.get("reason") or "")
         if reason and status in ("оффер", "отказ"):
             text += f"\nПричина: {reason}"
+        note = _POST_APPLY_NOTE.get(brand_id)
+        if note:
+            text += f"\n\n{note}"
         await render_screen(bot, chat_id, text, reply_markup=back_to_list_keyboard())
         return
 
@@ -276,7 +296,10 @@ async def brand_apply(call: CallbackQuery, bot: Bot):
             await bot.send_message(admin_id, admin_text)
         except Exception:  # noqa: BLE001
             logger.warning("failed to notify admin %s about brand response", admin_id)
-    await render_screen(
-        bot, chat_id, "🎉 Отклик отправлен! Статус смотри в меню «📨 Мои отклики».",
-        reply_markup=back_to_list_keyboard(),
-    )
+    note = _POST_APPLY_NOTE.get(brand_id)
+    success = "🎉 Отклик принят!"
+    if note:
+        success += f"\n\n{note}"
+    else:
+        success += " Статус смотри в меню «📨 Мои отклики»."
+    await render_screen(bot, chat_id, success, reply_markup=back_to_list_keyboard())
