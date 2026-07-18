@@ -182,11 +182,36 @@ def admin_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📊 Аналитика", callback_data="admin:stats")],
-            [InlineKeyboardButton(text="📣 Рассылка", callback_data="admin:broadcast")],
+            [InlineKeyboardButton(text="📣 Рассылка (текст)", callback_data="admin:broadcast")],
+            [InlineKeyboardButton(text="📢 Анонс бренда с кнопкой отклика", callback_data="admin:announce")],
             [InlineKeyboardButton(text="📤 Экспорт креаторов", callback_data="admin:export")],
             [InlineKeyboardButton(text="📥 Экспорт заходов (все)", callback_data="admin:export_visits")],
             [InlineKeyboardButton(text="🙈 Экспорт: заходили, но не зарегались", callback_data="admin:export_unreg")],
+            [InlineKeyboardButton(text="📋 Список команд", callback_data="admin:commands")],
         ]
+    )
+
+
+def announce_brand_keyboard(brands: list[Brand]) -> InlineKeyboardMarkup:
+    """Выбор бренда для анонса — по кнопке на бренд + отмена."""
+    rows = [[InlineKeyboardButton(text=b.title[:60], callback_data=f"announce_brand:{b.id}")] for b in brands]
+    rows.append([InlineKeyboardButton(text="Отмена", callback_data="announce:cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def announce_confirm_keyboard(n: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=f"📢 Отправить {n} креаторам", callback_data="announce:send")],
+            [InlineKeyboardButton(text="Отмена", callback_data="announce:cancel")],
+        ]
+    )
+
+
+def apply_button_keyboard(brand_id: str, label: str = "🙋 Откликнуться") -> InlineKeyboardMarkup:
+    """Инлайн-кнопка отклика для анонса — несёт brand_apply:{id} (тот же флоу, что в карточке)."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text=label, callback_data=f"brand_apply:{brand_id}")]]
     )
 
 

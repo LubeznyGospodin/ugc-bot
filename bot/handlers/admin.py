@@ -21,12 +21,15 @@ from bot.database import get_session
 from bot.keyboards import (
     BTN_ADMIN,
     admin_menu_keyboard,
+    announce_brand_keyboard,
+    announce_confirm_keyboard,
+    apply_button_keyboard,
     broadcast_confirm_keyboard,
     nudge_backlog_confirm_keyboard,
 )
 from bot.models import Creator
 from bot.sheets import SheetsError, sheets_client
-from bot.states import BroadcastFSM
+from bot.states import AnnounceFSM, BroadcastFSM
 from bot.utils.chat_cleanup import render_screen
 from bot.utils.db_helpers import count_creators, funnel_stats
 from bot.utils.export import export_creators_xlsx, export_unregistered_xlsx, export_visits_xlsx
@@ -131,6 +134,141 @@ async def admin_broadcast_send(call: CallbackQuery, state: FSMContext, bot: Bot)
         bot,
         call.message.chat.id,
         f"✅ Рассылка завершена.\nДоставлено: {sent}\nНе удалось: {failed}",
+        reply_markup=admin_menu_keyboard(),
+    )
+
+
+_COMMANDS_TEXT = (
+    "📋 <b>Команды и разделы админки</b>\n\n"
+    "<b>Меню (кнопки «🛠 Админка»):</b>\n"
+    "📊 Аналитика — воронка CJM\n"
+    "📣 Рассылка (текст) — сообщение всем креаторам\n"
+    "📢 Анонс бренда — рассылка с кнопкой «Откликнуться»\n"
+    "📤 Экспорт креаторов — xlsx всех анкет\n"
+    "📥 Экспорт заходов (все) — все, кто жал /start\n"
+    "🙈 Экспорт: не зарегались — кому уйдёт пуш\n\n"
+    "<b>Команды (набрать вручную):</b>\n"
+    "/admin — открыть админ-меню\n"
+    "/announce — анонс бренда с кнопкой отклика\n"
+    "/nudge_backlog — пуш-напоминание тем, кто зашёл, но не зарегался\n"
+    "/photos_to_group — отправить сохранённые фото креаторов в рабочую группу\n"
+    "/chatid — показать id текущего чата (для настройки группы)\n"
+    "/export — выгрузить креаторов файлом"
+)
+
+
+@router.callback_query(F.data == "admin:commands")
+async def admin_commands(call: CallbackQuery, bot: Bot):
+    if not _admin_only(call.from_user.id):
+        await call.answer("Недоступно", show_alert=True)
+        return
+    await call.answer()
+    await render_screen(bot, call.message.chat.id, _COMMANDS_TEXT, reply_markup=admin_menu_keyboard())
+
+
+# ── Анонс бренда по базе с кнопкой «Откликнуться» ─────────────────────────────
+@router.callback_query(F.data == "admin:announce")
+@router.message(Command("announce"))
+async def announce_start(event, bot: Bot, state: FSMContext):
+    user_id = event.from_user.id
+    chat_id = event.message.chat.id if isinstance(event, CallbackQuery) else event.chat.id
+    if not _admin_only(user_id):
+        if isinstance(event, CallbackQuery):
+            await event.answer("Недоступно", show_alert=True)
+        return
+    if isinstance(event, CallbackQuery):
+        await event.answer()
+    await state.clear()
+    from bot.handlers.brands import _fetch_brands
+
+    brands = await _fetch_brands()
+    if not brands:
+        await render_screen(bot, chat_id, "Нет активных брендов для анонса.", reply_markup=admin_menu_keyboard())
+        return
+    await render_screen(
+        bot, chat_id,
+        "📢 Какой бренд анонсируем? (кнопка «Откликнуться» приведёт именно к нему)",
+        reply_markup=announce_brand_keyboard(brands),
+    )
+
+
+@router.callback_query(F.data.startswith("announce_brand:"))
+async def announce_pick_brand(call: CallbackQuery, state: FSMContext, bot: Bot):
+    if not _admin_only(call.from_user.id):
+        await call.answer("Недоступно", show_alert=True)
+        return
+    await call.answer()
+    brand_id = call.data.split(":", 1)[1]
+    from bot.handlers.brands import _fetch_brands
+
+    brands = await _fetch_brands()
+    brand = next((b for b in brands if b.id == brand_id), None)
+    if brand is None:
+        await render_screen(bot, call.message.chat.id, "Бренд не найден, попробуй ещё раз.", reply_markup=admin_menu_keyboard())
+        return
+    await state.update_data(announce_brand_id=brand_id, announce_brand_title=brand.title)
+    await state.set_state(AnnounceFSM.waiting_text)
+    await render_screen(
+        bot, call.message.chat.id,
+        f"Бренд: <b>{brand.title}</b>\n\nПришли текст анонса одним сообщением. "
+        "Внизу автоматически будет кнопка «🙋 Откликнуться».",
+    )
+
+
+@router.message(AnnounceFSM.waiting_text)
+async def announce_text(message: Message, state: FSMContext, bot: Bot):
+    if not _admin_only(message.from_user.id):
+        return
+    await state.update_data(announce_text=message.text or message.caption or "")
+    data = await state.get_data()
+    count = await count_creators()
+    await state.set_state(AnnounceFSM.waiting_confirm)
+    await render_screen(
+        bot, message.chat.id,
+        f"Анонс бренда <b>{data.get('announce_brand_title')}</b>.\n"
+        f"Получат: <b>{count}</b> креаторов.\n\n———\n{data.get('announce_text')}\n———\n"
+        "Внизу у каждого будет кнопка «🙋 Откликнуться».",
+        reply_markup=announce_confirm_keyboard(count),
+        delete_trigger=message,
+    )
+
+
+@router.callback_query(F.data == "announce:cancel")
+async def announce_cancel(call: CallbackQuery, state: FSMContext, bot: Bot):
+    await call.answer("Отменено")
+    await state.clear()
+    await render_screen(bot, call.message.chat.id, "⚙️ Админ-панель", reply_markup=admin_menu_keyboard())
+
+
+@router.callback_query(AnnounceFSM.waiting_confirm, F.data == "announce:send")
+async def announce_send(call: CallbackQuery, state: FSMContext, bot: Bot):
+    if not _admin_only(call.from_user.id):
+        await call.answer("Недоступно", show_alert=True)
+        return
+    data = await state.get_data()
+    text = data.get("announce_text", "")
+    brand_id = data.get("announce_brand_id", "")
+    await state.clear()
+    await call.answer("Рассылаю анонс...")
+    await render_screen(bot, call.message.chat.id, "📢 Рассылаю анонс...")
+
+    async with get_session() as session:
+        chat_ids = [row[0] for row in (await session.execute(select(Creator.tg_id))).all()]
+
+    kb = apply_button_keyboard(brand_id)
+    sent, failed = 0, 0
+    for chat_id in chat_ids:
+        try:
+            await bot.send_message(chat_id, text, reply_markup=kb)
+            sent += 1
+        except Exception as e:  # noqa: BLE001
+            logger.warning("announce to %s failed: %s", chat_id, e)
+            failed += 1
+        await asyncio.sleep(0.05)  # лимиты Telegram
+
+    await render_screen(
+        bot, call.message.chat.id,
+        f"✅ Анонс разослан.\nДоставлено: {sent}\nНе удалось: {failed}",
         reply_markup=admin_menu_keyboard(),
     )
 

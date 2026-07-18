@@ -33,3 +33,10 @@ class EditField(StatesGroup):
 class BroadcastFSM(StatesGroup):
     waiting_text = State()
     waiting_confirm = State()
+
+
+class AnnounceFSM(StatesGroup):
+    """Анонс бренда по базе с инлайн-кнопкой «Откликнуться» (callback brand_apply:{id})."""
+
+    waiting_text = State()
+    waiting_confirm = State()
