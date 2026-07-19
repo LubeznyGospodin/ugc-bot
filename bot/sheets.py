@@ -192,6 +192,11 @@ class SheetsClient:
             }
         )
 
+    async def single_update(self, chat_id: int, fields: dict[str, Any]) -> dict[str, Any]:
+        """Записать поля пайплайна «Сингл» в строку отклика (лист «Отклики», по chat_id +
+        бренд br1). fields: подтвердил / срок / ссылка. Новые колонки создаются в конце."""
+        return await self._post({"action": "single_update", "chat_id": chat_id, "fields": fields})
+
     async def stats(self) -> StatsResult:
         payload = await self._post({"action": "stats"})
         return StatsResult.from_payload(payload)

@@ -142,6 +142,7 @@ _COMMANDS_TEXT = (
     "📋 <b>Команды и разделы админки</b>\n\n"
     "<b>Меню (кнопки «🛠 Админка»):</b>\n"
     "📊 Аналитика — воронка CJM\n"
+    "🎬 Воронка «Сингл» — этапы пайплайна (отклик→ролик)\n"
     "📣 Рассылка (текст) — сообщение всем креаторам\n"
     "📢 Анонс бренда — рассылка с кнопкой «Откликнуться»\n"
     "📤 Экспорт креаторов — xlsx всех анкет\n"
@@ -155,6 +156,17 @@ _COMMANDS_TEXT = (
     "/chatid — показать id текущего чата (для настройки группы)\n"
     "/export — выгрузить креаторов файлом"
 )
+
+
+@router.callback_query(F.data == "admin:single_funnel")
+async def admin_single_funnel(call: CallbackQuery, bot: Bot):
+    if not _admin_only(call.from_user.id):
+        await call.answer("Недоступно", show_alert=True)
+        return
+    await call.answer()
+    from bot.single import funnel, funnel_text
+
+    await render_screen(bot, call.message.chat.id, funnel_text(await funnel()), reply_markup=admin_menu_keyboard())
 
 
 @router.callback_query(F.data == "admin:commands")

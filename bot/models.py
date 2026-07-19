@@ -10,9 +10,9 @@ Sheets на каждое нажатие кнопки) и хранилище но
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import BigInteger, DateTime, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -89,6 +89,44 @@ class CreatorPhoto(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     # Куда уже отправляли (чтобы не слать в группу дважды).
     sent_to_chat: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class SinglePipeline(Base):
+    """Пайплайн дожима до ролика — ТОЛЬКО проект «Сингл» (br1).
+
+    Этапы (stage):
+      offered   — админ поставил «оффер» в таблице, бот отправил условия + «Участвую»
+      accepted  — креатор нажал «Участвую», бот ждёт срок
+      producing — креатор задал срок, делает ролик (дедлайн активен)
+      submitted — креатор прислал ссылки на посты, цикл завершён
+    """
+
+    __tablename__ = "single_pipeline"
+
+    chat_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    telegram: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    stage: Mapped[str] = mapped_column(String(16), default="offered", index=True)
+    offered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    deadline: Mapped[date | None] = mapped_column(Date, nullable=True)
+    deadline_raw: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Флаги, чтобы не спамить напоминаниями (за день до / в день дедлайна).
+    reminded_before: Mapped[bool] = mapped_column(Boolean, default=False)
+    reminded_due: Mapped[bool] = mapped_column(Boolean, default=False)
+    links: Mapped[str | None] = mapped_column(Text, nullable=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AppState(Base):
+    """Мелкое key→value хранилище для служебных отметок (напр. дата последнего
+    утреннего отчёта — чтобы не слать дважды после рестарта)."""
+
+    __tablename__ = "app_state"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")
 
 
 class CachedApplication(Base):

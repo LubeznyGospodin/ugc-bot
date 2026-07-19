@@ -40,3 +40,10 @@ class AnnounceFSM(StatesGroup):
 
     waiting_text = State()
     waiting_confirm = State()
+
+
+class SingleFSM(StatesGroup):
+    """Пайплайн проекта «Сингл»: ввод срока ролика и ссылок на посты."""
+
+    waiting_deadline = State()
+    waiting_links = State()

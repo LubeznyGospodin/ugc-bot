@@ -1,6 +1,6 @@
 from aiogram import Router
 
-from . import admin, brands, profile, registration, start
+from . import admin, brands, profile, registration, single, start
 
 router = Router(name="root")
 # Порядок важен: start должен успеть обработать /start и текстовые кнопки
@@ -8,5 +8,6 @@ router = Router(name="root")
 router.include_router(start.router)
 router.include_router(profile.router)
 router.include_router(brands.router)
+router.include_router(single.router)
 router.include_router(admin.router)
 router.include_router(registration.router)

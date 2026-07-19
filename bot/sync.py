@@ -168,12 +168,44 @@ async def _brand_display_name(brand_title: str) -> str:
     return bt
 
 
-async def _notify_status(chat_id: int, brand_title: str, status: str, reason: str) -> None:
-    """Пуш креатору при смене статуса отклика. Шлём НАПРЯМУЮ по токену бота
-    (не через Apps Script) — надёжно, без хрупкой авторизации триггеров/UrlFetchApp."""
+async def _send_raw(chat_id: int, text: str, reply_markup: dict | None = None) -> None:
     token = settings.bot_token
     if not token:
         return
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML",
+               "link_preview_options": {"is_disabled": True}}
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    try:
+        async with aiohttp.ClientSession() as s:
+            await s.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json=payload, timeout=aiohttp.ClientTimeout(total=10),
+            )
+    except Exception as e:  # noqa: BLE001 — пуш не критичен, не роняем синк
+        logger.warning("status push failed for %s: %s", chat_id, e)
+
+
+async def _notify_status(chat_id: int, brand_title: str, status: str, reason: str) -> None:
+    """Пуш креатору при смене статуса отклика. Шлём НАПРЯМУЮ по токену бота
+    (не через Apps Script) — надёжно, без хрупкой авторизации триггеров/UrlFetchApp.
+
+    Спец-случай: оффер по «Сингл» (br1) запускает ПАЙПЛАЙН — вместо обычного «тебе оффер»
+    шлём условия + кнопку «Участвую» (см. bot/single.py)."""
+    from bot.single import OFFER_TEXT, is_single, start_offer
+
+    if status == "оффер" and is_single(brand_title):
+        from bot.utils.db_helpers import get_creator_by_tg_id
+
+        creator = await get_creator_by_tg_id(chat_id)
+        name = getattr(creator, "full_name", None) if creator else None
+        tg = getattr(creator, "telegram_contact", None) if creator else None
+        is_new = await start_offer(chat_id, name, tg)
+        if is_new:  # новый оффер — шлём приглашение в пайплайн (иначе не спамим)
+            kb = {"inline_keyboard": [[{"text": "✅ Да, участвую", "callback_data": "single:accept"}]]}
+            await _send_raw(chat_id, OFFER_TEXT, kb)
+        return
+
     name = await _brand_display_name(brand_title)
     if status == "оффер":
         head = f"По бренду «{name}»" if name else "По твоему отклику"
@@ -185,15 +217,7 @@ async def _notify_status(chat_id: int, brand_title: str, status: str, reason: st
             + (f" Причина: {reason}" if reason else "")
             + " Впереди новые запросы — не переживай!"
         )
-    try:
-        async with aiohttp.ClientSession() as s:
-            await s.post(
-                f"https://api.telegram.org/bot{token}/sendMessage",
-                json={"chat_id": chat_id, "text": text},
-                timeout=aiohttp.ClientTimeout(total=10),
-            )
-    except Exception as e:  # noqa: BLE001 — пуш не критичен, не роняем синк
-        logger.warning("status push failed for %s: %s", chat_id, e)
+    await _send_raw(chat_id, text)
 
 
 async def sync_applications() -> int:

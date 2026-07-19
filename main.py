@@ -62,6 +62,11 @@ async def main() -> None:
 
     asyncio.create_task(run_nudge_loop(bot))
 
+    # Пайплайн «Сингл»: напоминания креаторам про дедлайн + утренний отчёт админам.
+    from bot.single import run_single_loop
+
+    asyncio.create_task(run_single_loop(bot))
+
     logger.info("Бот запускается (polling)...")
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)

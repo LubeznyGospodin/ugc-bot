@@ -182,6 +182,7 @@ def admin_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📊 Аналитика", callback_data="admin:stats")],
+            [InlineKeyboardButton(text="🎬 Воронка «Сингл»", callback_data="admin:single_funnel")],
             [InlineKeyboardButton(text="📣 Рассылка (текст)", callback_data="admin:broadcast")],
             [InlineKeyboardButton(text="📢 Анонс бренда с кнопкой отклика", callback_data="admin:announce")],
             [InlineKeyboardButton(text="📤 Экспорт креаторов", callback_data="admin:export")],
@@ -212,6 +213,21 @@ def apply_button_keyboard(brand_id: str, label: str = "🙋 Откликнуть
     """Инлайн-кнопка отклика для анонса — несёт brand_apply:{id} (тот же флоу, что в карточке)."""
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text=label, callback_data=f"brand_apply:{brand_id}")]]
+    )
+
+
+# ── Пайплайн «Сингл» ──────────────────────────────────────────────────────────
+def single_accept_keyboard() -> InlineKeyboardMarkup:
+    """Кнопка «Участвую» под оффером «Сингл»."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="✅ Да, участвую", callback_data="single:accept")]]
+    )
+
+
+def single_submit_keyboard() -> InlineKeyboardMarkup:
+    """Кнопка «Отправить ссылки на ролик» (этап «делает ролик»)."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="📹 Отправить ссылки на ролик", callback_data="single:submit")]]
     )
 
 
