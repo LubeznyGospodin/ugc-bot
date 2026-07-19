@@ -67,6 +67,11 @@ async def main() -> None:
 
     asyncio.create_task(run_single_loop(bot))
 
+    # Эксплуатация: пинг внешнего монитора (алерт, если хостинг встал) + напоминания об оплате.
+    from bot.ops import run_ops_loop
+
+    asyncio.create_task(run_ops_loop(bot))
+
     logger.info("Бот запускается (polling)...")
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)

@@ -154,7 +154,11 @@ _COMMANDS_TEXT = (
     "/nudge_backlog — пуш-напоминание тем, кто зашёл, но не зарегался\n"
     "/photos_to_group — отправить сохранённые фото креаторов в рабочую группу\n"
     "/chatid — показать id текущего чата (для настройки группы)\n"
-    "/export — выгрузить креаторов файлом"
+    "/export — выгрузить креаторов файлом\n\n"
+    "<b>Хостинг:</b>\n"
+    "/hosting — статус оплаты и мониторинга\n"
+    "/hosting_due 15.08.2026 — задать дату оплаты\n"
+    "/paid — отметить, что оплатил (перенос на след. месяц)"
 )
 
 
@@ -282,6 +286,61 @@ async def announce_send(call: CallbackQuery, state: FSMContext, bot: Bot):
         bot, call.message.chat.id,
         f"✅ Анонс разослан.\nДоставлено: {sent}\nНе удалось: {failed}",
         reply_markup=admin_menu_keyboard(),
+    )
+
+
+@router.message(Command("hosting_due"))
+async def hosting_due_cmd(message: Message, bot: Bot):
+    """Задать дату оплаты хостинга: /hosting_due 15.08.2026 (или 15.08)."""
+    if not _admin_only(message.from_user.id):
+        return
+    from bot.ops import set_hosting_due
+    from bot.single import parse_deadline
+
+    arg = (message.text or "").split(maxsplit=1)
+    dl = parse_deadline(arg[1]) if len(arg) > 1 else None
+    if dl is None:
+        await message.reply("Формат: <code>/hosting_due 15.08.2026</code> (или 15.08)")
+        return
+    await set_hosting_due(dl)
+    await message.reply(
+        f"✅ Дата оплаты хостинга: <b>{dl.strftime('%d.%m.%Y')}</b>.\n"
+        "Напомню за 3 дня и в день оплаты. Когда оплатишь — /paid."
+    )
+
+
+@router.message(Command("paid"))
+async def hosting_paid_cmd(message: Message, bot: Bot):
+    """Отметить оплату хостинга — переносит срок на следующий месяц."""
+    if not _admin_only(message.from_user.id):
+        return
+    from bot.ops import mark_paid
+
+    nxt = await mark_paid()
+    if nxt is None:
+        await message.reply("Дата оплаты не задана. Сначала: <code>/hosting_due 15.08.2026</code>")
+        return
+    await message.reply(f"👍 Отметил оплату. Следующая дата: <b>{nxt.strftime('%d.%m.%Y')}</b>.")
+
+
+@router.message(Command("hosting"))
+async def hosting_status_cmd(message: Message, bot: Bot):
+    """Показать статус оплаты хостинга + мониторинга."""
+    if not _admin_only(message.from_user.id):
+        return
+    from bot.ops import _today_msk, get_hosting_status
+
+    st = await get_hosting_status()
+    if not st["due"]:
+        await message.reply("Дата оплаты хостинга не задана. Задай: <code>/hosting_due 15.08.2026</code>")
+        return
+    days = (st["due"] - _today_msk()).days
+    when = f"через {days} дн." if days > 0 else ("сегодня" if days == 0 else f"просрочено на {-days} дн.")
+    mon = "✅ подключён" if settings.heartbeat_url else "❌ не подключён (нужен внешний монитор)"
+    await message.reply(
+        f"🖥 <b>Хостинг</b>\n"
+        f"Оплата: <b>{st['due'].strftime('%d.%m.%Y')}</b> ({when})\n"
+        f"Мониторинг падений: {mon}"
     )
 
 
