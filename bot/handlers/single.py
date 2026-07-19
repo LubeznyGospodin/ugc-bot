@@ -16,7 +16,9 @@ from bot.keyboards import single_submit_keyboard
 from bot.sheets import SheetsError, sheets_client
 from bot.single import (
     ACCEPT_TEXT,
+    ASK_DEADLINE_RESUME,
     ASK_LINKS_TEXT,
+    ASK_PAYMENT_TEXT,
     BAD_DEADLINE_TEXT,
     BAD_PAYMENT_TEXT,
     DONE_TEXT,
@@ -72,11 +74,27 @@ async def single_deadline(message: Message, state: FSMContext, bot: Bot):
     await message.answer(producing_text(dl), reply_markup=single_submit_keyboard())
 
 
+@router.callback_query(F.data == "single:resume_deadline")
+async def single_resume_deadline(call: CallbackQuery, state: FSMContext, bot: Bot):
+    """Вернуться к вводу срока из «Мои проекты» (шаг восстановлен из БД)."""
+    await call.answer()
+    await state.set_state(SingleFSM.waiting_deadline)
+    await bot.send_message(call.message.chat.id, ASK_DEADLINE_RESUME)
+
+
 @router.callback_query(F.data == "single:submit")
 async def single_submit_start(call: CallbackQuery, state: FSMContext, bot: Bot):
     await call.answer()
     await state.set_state(SingleFSM.waiting_links)
     await bot.send_message(call.message.chat.id, ASK_LINKS_TEXT)
+
+
+@router.callback_query(F.data == "single:resume_payment")
+async def single_resume_payment(call: CallbackQuery, state: FSMContext, bot: Bot):
+    """Вернуться к вводу реквизитов из «Мои проекты»."""
+    await call.answer()
+    await state.set_state(SingleFSM.waiting_payment)
+    await bot.send_message(call.message.chat.id, ASK_PAYMENT_TEXT)
 
 
 @router.message(SingleFSM.waiting_links)

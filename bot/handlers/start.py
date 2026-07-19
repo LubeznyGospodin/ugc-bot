@@ -25,7 +25,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from bot.config import settings
-from bot.keyboards import BTN_HELP, ask_question_keyboard, confirm_dedup_keyboard, main_menu
+from bot.keyboards import BTN_HELP, BTN_PROJECTS, ask_question_keyboard, confirm_dedup_keyboard, main_menu
 from bot.sheets import LookupResult, SheetsError, sheets_client
 from bot.states import Dedup
 from bot.utils.chat_cleanup import ensure_menu, render_loading, render_screen
@@ -180,6 +180,16 @@ async def nudge_register(call: CallbackQuery, state: FSMContext, bot: Bot):
         "📋 <b>Шаг 1 из 10</b>\n\nКак тебя зовут (имя и фамилия)?",
     )
     await state.set_state(Registration.full_name)
+
+
+# «Мои проекты» — в start (самый ранний роутер), чтобы срабатывало даже когда креатор
+# на шаге пайплайна (waiting_deadline/links/payment). Шаг восстанавливается из БД.
+@router.message(F.text == BTN_PROJECTS)
+async def my_projects(message: Message, bot: Bot):
+    from bot.single import my_projects_view
+
+    text, markup = await my_projects_view(message.from_user.id)
+    await bot.send_message(message.chat.id, text, reply_markup=markup)
 
 
 # Ловим и новый ярлык, и старый «💬 Помощь» — у кого меню ещё не обновилось после

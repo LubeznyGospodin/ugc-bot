@@ -37,6 +37,7 @@ BTN_SHARE_CONTACT = "📱 Поделиться контактом"
 BTN_PROFILE = "🧾 Моя анкета"
 BTN_BRANDS = "🎯 Запросы брендов"
 BTN_MY_APPS = "📨 Мои отклики"
+BTN_PROJECTS = "📁 Мои проекты"
 BTN_HELP = "💬 Задать вопрос"
 BTN_ADMIN = "🛠 Админка"
 
@@ -44,7 +45,8 @@ BTN_ADMIN = "🛠 Админка"
 def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
     rows = [
         [KeyboardButton(text=BTN_PROFILE), KeyboardButton(text=BTN_BRANDS)],
-        [KeyboardButton(text=BTN_MY_APPS), KeyboardButton(text=BTN_HELP)],
+        [KeyboardButton(text=BTN_MY_APPS), KeyboardButton(text=BTN_PROJECTS)],
+        [KeyboardButton(text=BTN_HELP)],
     ]
     if is_admin:
         rows.append([KeyboardButton(text=BTN_ADMIN)])

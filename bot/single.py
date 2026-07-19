@@ -65,6 +65,15 @@ ACCEPT_TEXT = (
     "📌 Важно: план по охватам до <b>15.08</b> — чем раньше скинешь ролик, тем лучше!"
 )
 BAD_DEADLINE_TEXT = "Не понял дату 🙈 Напиши в формате <b>ДД.ММ</b>, например 20.07."
+# Короткий запрос срока — для возврата к шагу из «Мои проекты» (без плана работы).
+ASK_DEADLINE_RESUME = (
+    "📅 К какой дате сделаешь ролик? Напиши в формате <b>ДД.ММ</b> (например, 20.07).\n"
+    "📌 План по охватам до <b>15.08</b> — чем раньше, тем лучше."
+)
+ASK_PAYMENT_TEXT = (
+    "💳 Пришли номер телефона для оплаты и желаемый банк для перевода по СБП одним "
+    "сообщением (например: <code>89991234567 Сбербанк</code>)."
+)
 
 
 def producing_text(deadline: date) -> str:
@@ -230,6 +239,46 @@ async def funnel() -> dict[str, int]:
         "producing": sum(1 for p in pipe if p.stage == "producing"),
         "submitted": sum(1 for p in pipe if p.stage == "submitted"),
     }
+
+
+def _stage_card(p: SinglePipeline):
+    """Карточка текущего этапа проекта «Сингл» для «Мои проекты» — с кнопкой продолжить.
+    Шаг восстанавливается из БД, так что работает даже после /start (сброса FSM)."""
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    head = "🎵 <b>Проект «Сингл» (ИИ-треки от ЗВУК)</b>\n\n"
+
+    def kb(text, cb):
+        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=text, callback_data=cb)]])
+
+    if p.stage == "offered":
+        return head + "✅ Тебя одобрили! Осталось подтвердить участие.", kb("✅ Да, участвую", "single:accept")
+    if p.stage == "accepted":
+        return head + "📅 Ты подтвердил участие. Осталось указать срок ролика.", kb("📅 Указать срок", "single:resume_deadline")
+    if p.stage == "producing":
+        dl = p.deadline.strftime("%d.%m") if p.deadline else "—"
+        return (
+            head + f"🎬 Ты делаешь ролик. Срок: <b>{dl}</b>.\n"
+            "Как выложишь в соцсети — пришли ссылки на посты.",
+            kb("📹 Отправить ссылки на ролик", "single:submit"),
+        )
+    if p.stage == "submitted":
+        if p.payment_at is None:
+            return head + "✅ Ролик сдан! Осталось прислать реквизиты для оплаты.", kb("💳 Отправить реквизиты", "single:resume_payment")
+        return head + "🎉 Всё готово! Ролик сдан, реквизиты приняты. Оплата поступит в течение двух дней.", None
+    return head + "Статус уточняется.", None
+
+
+async def my_projects_view(chat_id: int):
+    """(текст, клавиатура) для экрана «Мои проекты». Пока проект один — «Сингл»."""
+    p = await get_pipeline(chat_id)
+    if p is None:
+        return (
+            "📁 <b>Мои проекты</b>\n\nПока нет активных проектов. Загляни в «🎯 Запросы брендов» "
+            "и откликнись на подходящий — если по нему будет оффер, проект появится здесь.",
+            None,
+        )
+    return _stage_card(p)
 
 
 def funnel_text(f: dict[str, int]) -> str:

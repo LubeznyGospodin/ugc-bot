@@ -19,6 +19,7 @@ from bot.keyboards import (
     BTN_BRANDS,
     BTN_HELP,
     BTN_MY_APPS,
+    BTN_PROJECTS,
     BTN_PROFILE,
     EDITABLE_FIELDS,
     edit_fields_keyboard,
@@ -46,7 +47,7 @@ _DB_FIELD = {
     "phone": "phone",
     "category": "categories",
 }
-_MENU_BTNS = [BTN_PROFILE, BTN_BRANDS, BTN_MY_APPS, BTN_HELP, BTN_ADMIN]
+_MENU_BTNS = [BTN_PROFILE, BTN_BRANDS, BTN_MY_APPS, BTN_PROJECTS, BTN_HELP, BTN_ADMIN]
 
 
 async def _track_record_line(tg_id: int) -> str:

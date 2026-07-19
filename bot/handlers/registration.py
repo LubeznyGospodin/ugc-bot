@@ -21,6 +21,7 @@ from bot.keyboards import (
     BTN_BRANDS,
     BTN_HELP,
     BTN_MY_APPS,
+    BTN_PROJECTS,
     BTN_PROFILE,
     BTN_SHARE_CONTACT,
     contact_request_keyboard,
@@ -37,7 +38,7 @@ from bot.utils.db_helpers import get_creator_by_tg_id, upsert_creator
 logger = logging.getLogger(__name__)
 router = Router(name="registration")
 
-_MENU_BTNS = [BTN_PROFILE, BTN_BRANDS, BTN_MY_APPS, BTN_HELP, BTN_ADMIN]
+_MENU_BTNS = [BTN_PROFILE, BTN_BRANDS, BTN_MY_APPS, BTN_PROJECTS, BTN_HELP, BTN_ADMIN]
 
 # Фото/файлы, присланные прямо в чат на шаге «фото», копим в памяти по chat_id как
 # (kind, file_id), kind ∈ {"photo","doc"}. list.append в одном event-loop без await между
