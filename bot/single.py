@@ -49,9 +49,11 @@ OFFER_TEXT = (
 )
 ASK_DEADLINE_TEXT = (
     "Огонь! 🔥 К какой дате сделаешь ролик?\n\n"
-    "Напиши дату в формате <b>ДД.ММ</b> (например, 28.07)."
+    "Напиши дату в формате <b>ДД.ММ</b> (например, 20.07).\n\n"
+    "📌 Важно: нам нужно сделать план по охватам до <b>15.08</b> — поэтому чем раньше "
+    "скинешь ролик, тем лучше!"
 )
-BAD_DEADLINE_TEXT = "Не понял дату 🙈 Напиши в формате <b>ДД.ММ</b>, например 28.07."
+BAD_DEADLINE_TEXT = "Не понял дату 🙈 Напиши в формате <b>ДД.ММ</b>, например 20.07."
 
 
 def producing_text(deadline: date) -> str:
@@ -77,7 +79,19 @@ NOT_A_LINK_TEXT = (
     "Это не похоже на ссылку 🙈 Пришли ссылки на посты (начинаются с http…). "
     "Файлы сюда не нужно — ролик на утверждение отправляй в @packman_hr."
 )
-DONE_TEXT = "🎬 Готово! Цикл завершён. Спасибо, ты молодец — ждём охваты 🚀"
+# После сдачи ссылок — поздравление + запрос реквизитов для оплаты по СБП.
+DONE_TEXT = (
+    "Супер! 🚀 Желаю тебе в скором времени под этим рилсом написать и закрепить "
+    "комментарий в духе: «раз этот рилс улетел в космос, давайте расскажу о себе…». "
+    "Точнее — иметь повод так сделать 😉\n\n"
+    "💳 Пришли, пожалуйста, сюда номер телефона для оплаты и желаемый банк для перевода "
+    "по СБП. В течение двух дней оплатим фиксированную часть, если она у тебя предусмотрена."
+)
+PAYMENT_SAVED_TEXT = "Принято, спасибо! Передали реквизиты в оплату 🙌 Цикл завершён."
+BAD_PAYMENT_TEXT = (
+    "Не увидел номер телефона 🙈 Пришли, пожалуйста, номер телефона и банк одним сообщением, "
+    "например: <code>89991234567 Сбербанк</code>."
+)
 
 
 # ── Парсер даты ───────────────────────────────────────────────────────────────
@@ -160,6 +174,31 @@ async def submit_links(chat_id: int, links: str) -> None:
             p.stage = "submitted"
             p.links = links
             p.submitted_at = datetime.utcnow()
+            p.updated_at = datetime.utcnow()
+            await s.commit()
+
+
+def parse_payment(text: str) -> tuple[str, str] | None:
+    """Из «89991234567 Сбербанк» → (телефон, банк). Телефон обязателен (иначе None),
+    банк — остаток строки (может быть пустым)."""
+    t = (text or "").strip()
+    m = re.search(r"(\+?\d[\d\s\-()]{8,}\d)", t)
+    if not m:
+        return None
+    phone = re.sub(r"\D", "", m.group(1))
+    if len(phone) < 10:
+        return None
+    bank = (t[: m.start()] + " " + t[m.end():]).strip(" ,;–-\n")
+    return phone, bank
+
+
+async def save_payment(chat_id: int, phone: str, bank: str) -> None:
+    async with get_session() as s:
+        p = (await s.execute(select(SinglePipeline).where(SinglePipeline.chat_id == chat_id))).scalar_one_or_none()
+        if p:
+            p.payment_phone = phone
+            p.payment_bank = bank
+            p.payment_at = datetime.utcnow()
             p.updated_at = datetime.utcnow()
             await s.commit()
 

@@ -18,12 +18,16 @@ from bot.single import (
     ASK_DEADLINE_TEXT,
     ASK_LINKS_TEXT,
     BAD_DEADLINE_TEXT,
+    BAD_PAYMENT_TEXT,
     DONE_TEXT,
     NOT_A_LINK_TEXT,
+    PAYMENT_SAVED_TEXT,
     get_pipeline,
     mark_accepted,
     parse_deadline,
+    parse_payment,
     producing_text,
+    save_payment,
     set_deadline,
     submit_links,
 )
@@ -85,16 +89,42 @@ async def single_links(message: Message, state: FSMContext, bot: Bot):
         return
     await submit_links(message.from_user.id, text)
     _mirror(message.from_user.id, {"links": text})
-    await state.clear()
+    # После ссылок → просим реквизиты для оплаты по СБП.
+    await state.set_state(SingleFSM.waiting_payment)
     await render_screen(bot, message.chat.id, DONE_TEXT, delete_trigger=message)
 
-    # Уведомляем админов о завершении цикла.
+    # Уведомляем админов о сдаче ролика.
     p = await get_pipeline(message.from_user.id)
     name = (p.full_name if p else None) or message.from_user.full_name
     tg = (p.telegram if p else None) or (f"@{message.from_user.username}" if message.from_user.username else "—")
-    admin_text = f"✅ <b>{name}</b> ({tg}) сдал(а) ролик по «Сингл»:\n{text}"
     for admin_id in settings.admin_ids:
         try:
-            await bot.send_message(admin_id, admin_text)
+            await bot.send_message(admin_id, f"✅ <b>{name}</b> ({tg}) сдал(а) ролик по «Сингл»:\n{text}")
         except Exception:  # noqa: BLE001
             logger.warning("notify admin %s about single done failed", admin_id)
+
+
+@router.message(SingleFSM.waiting_payment)
+async def single_payment(message: Message, state: FSMContext, bot: Bot):
+    parsed = parse_payment(message.text or message.caption or "")
+    if parsed is None:
+        await render_screen(bot, message.chat.id, BAD_PAYMENT_TEXT, delete_trigger=message)
+        return
+    phone, bank = parsed
+    await save_payment(message.from_user.id, phone, bank)
+    _mirror(message.from_user.id, {"phone": phone, "bank": bank})
+    await state.clear()
+    await render_screen(bot, message.chat.id, PAYMENT_SAVED_TEXT, delete_trigger=message)
+
+    p = await get_pipeline(message.from_user.id)
+    name = (p.full_name if p else None) or message.from_user.full_name
+    tg = (p.telegram if p else None) or (f"@{message.from_user.username}" if message.from_user.username else "—")
+    for admin_id in settings.admin_ids:
+        try:
+            await bot.send_message(
+                admin_id,
+                f"💳 <b>{name}</b> ({tg}) прислал(а) реквизиты по «Сингл»:\n"
+                f"Телефон: <code>{phone}</code>\nБанк: {bank or '—'}",
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("notify admin %s about single payment failed", admin_id)

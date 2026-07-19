@@ -43,7 +43,8 @@ class AnnounceFSM(StatesGroup):
 
 
 class SingleFSM(StatesGroup):
-    """Пайплайн проекта «Сингл»: ввод срока ролика и ссылок на посты."""
+    """Пайплайн проекта «Сингл»: ввод срока ролика, ссылок на посты и реквизитов оплаты."""
 
     waiting_deadline = State()
     waiting_links = State()
+    waiting_payment = State()

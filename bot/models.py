@@ -116,6 +116,10 @@ class SinglePipeline(Base):
     reminded_due: Mapped[bool] = mapped_column(Boolean, default=False)
     links: Mapped[str | None] = mapped_column(Text, nullable=True)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Реквизиты для оплаты по СБП (собираем после сдачи ссылок).
+    payment_phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    payment_bank: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payment_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
