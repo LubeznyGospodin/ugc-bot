@@ -15,7 +15,7 @@ from bot.config import settings
 from bot.keyboards import single_submit_keyboard
 from bot.sheets import SheetsError, sheets_client
 from bot.single import (
-    ASK_DEADLINE_TEXT,
+    ACCEPT_TEXT,
     ASK_LINKS_TEXT,
     BAD_DEADLINE_TEXT,
     BAD_PAYMENT_TEXT,
@@ -55,7 +55,7 @@ async def single_accept(call: CallbackQuery, state: FSMContext, bot: Bot):
     await mark_accepted(call.from_user.id)
     _mirror(call.from_user.id, {"confirm": "да"})
     await state.set_state(SingleFSM.waiting_deadline)
-    await render_screen(bot, call.message.chat.id, ASK_DEADLINE_TEXT)
+    await render_screen(bot, call.message.chat.id, ACCEPT_TEXT)
 
 
 @router.message(SingleFSM.waiting_deadline, F.text)
