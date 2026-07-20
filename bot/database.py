@@ -44,6 +44,8 @@ async def init_db() -> None:
     # Зеркало колонок «Подтвердил»/«Ссылка на ролик» в кэше откликов — для воронки «Сингл».
     await _add_column_if_missing("cached_applications", "confirmed", "VARCHAR(16)")
     await _add_column_if_missing("cached_applications", "video", "TEXT")
+    # Дата первого сбора охвата — для заморозки старых роликов.
+    await _add_column_if_missing("reach_rows", "first_seen", "TIMESTAMP")
 
 
 async def _add_column_if_missing(table: str, column: str, coltype: str) -> None:

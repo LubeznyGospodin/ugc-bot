@@ -261,20 +261,28 @@ async def reach_run(bot) -> dict:
             link_owner.setdefault(url, (a.get("name") or "", a.get("telegram") or ""))
 
     now = datetime.utcnow()
+    freeze_days = settings.reach_freeze_days
     failed: list[str] = []
+    frozen_cnt = 0
     async with get_session() as s:
         existing = {r.url: r for r in (await s.execute(select(ReachRow))).scalars().all()}
         for r in existing.values():
             r.active = False  # отметим ушедшие; активные включим ниже
         for url, (creator, tg) in link_owner.items():
-            platform, views, err = await asyncio.to_thread(fetch_reach, url)
             row = existing.get(url)
             if row is None:
-                row = ReachRow(url=url)
+                row = ReachRow(url=url, first_seen=now)
                 s.add(row)
                 existing[url] = row
-            row.creator, row.telegram, row.platform, row.active = creator, tg, platform, True
-            row.last_try_at = now
+            if row.first_seen is None:
+                row.first_seen = now
+            row.creator, row.telegram, row.active = creator, tg, True
+            # Заморозка: ролик старше N дней не парсим (экономим юниты), значение остаётся.
+            if (now - row.first_seen).days >= freeze_days:
+                frozen_cnt += 1
+                continue
+            platform, views, err = await asyncio.to_thread(fetch_reach, url)
+            row.platform, row.last_try_at = platform, now
             if views is not None:
                 row.views, row.updated_at, row.last_error = views, now, None
             else:
@@ -286,6 +294,8 @@ async def reach_run(bot) -> dict:
 
     # строки для таблицы + сумма
     def flag(r) -> str:
+        if r.first_seen and (now - r.first_seen).days >= freeze_days:
+            return f"🏁 финал ({freeze_days}д)"
         if r.views is None:
             return "⚠️ нет данных"
         if r.last_error:  # есть прошлое значение, но обновить не смогли
@@ -325,7 +335,7 @@ async def reach_run(bot) -> dict:
                 await bot.send_message(admin_id, head + body)
             except Exception:  # noqa: BLE001
                 pass
-    return {"ok": True, "links": len(link_owner), "failed": len(failed), "total": total}
+    return {"ok": True, "links": len(link_owner), "failed": len(failed), "frozen": frozen_cnt, "total": total}
 
 
 async def run_reach_loop(bot, interval: int = 900) -> None:

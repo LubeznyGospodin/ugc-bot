@@ -133,6 +133,7 @@ class ReachRow(Base):
     creator: Mapped[str | None] = mapped_column(String(255), nullable=True)
     telegram: Mapped[str | None] = mapped_column(String(255), nullable=True)
     platform: Mapped[str] = mapped_column(String(16), default="")
+    first_seen: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # для заморозки
     views: Mapped[int | None] = mapped_column(Integer, nullable=True)   # последнее успешное
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # когда успешно
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)

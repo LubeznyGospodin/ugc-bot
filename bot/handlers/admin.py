@@ -301,8 +301,8 @@ async def reach_cmd(message: Message, bot: Bot):
     if res.get("ok"):
         await render_screen(
             bot, message.chat.id,
-            f"✅ Готово.\nСсылок: {res['links']}\nСуммарный охват: {res['total']:,}\n"
-            f"Не спарсилось: {res['failed']}".replace(",", " "),
+            (f"✅ Готово.\nСсылок: {res['links']}\nСуммарный охват: {res['total']:,}\n"
+             f"Заморожено (финал): {res.get('frozen', 0)}\nНе спарсилось: {res['failed']}").replace(",", " "),
             reply_markup=admin_menu_keyboard(),
         )
     else:

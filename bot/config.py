@@ -67,6 +67,8 @@ class Settings:
     vk_token: str = field(default_factory=lambda: os.getenv("VK_TOKEN", "").strip())
     ensembledata_token: str = field(default_factory=lambda: os.getenv("ENSEMBLEDATA_TOKEN", "").strip())
     reach_sheet_id: str = field(default_factory=lambda: os.getenv("REACH_SHEET_ID", "").strip())
+    # Через сколько дней после первого сбора замораживаем ролик (перестаём парсить — экономия).
+    reach_freeze_days: int = field(default_factory=lambda: int(os.getenv("REACH_FREEZE_DAYS", "14")))
 
     # Пороги confidence для дедупа (см. doLookup_ в Apps Script — держим синхронно)
     lookup_auto_match_threshold: float = 0.92
