@@ -84,7 +84,7 @@ async def export_visits_xlsx() -> io.BytesIO:
     wb = Workbook()
     ws = wb.active
     ws.title = "Заходы"
-    ws.append(["Telegram ID", "Username", "Имя", "Первый заход", "Последний заход"])
+    ws.append(["Telegram ID", "Username", "Имя", "Источник", "Первый заход", "Последний заход"])
 
     async with get_session() as session:
         result = await session.execute(select(BotVisit).order_by(BotVisit.first_seen))
@@ -94,6 +94,7 @@ async def export_visits_xlsx() -> io.BytesIO:
                     v.tg_id,
                     str(v.username or ""),
                     str(v.full_name or ""),
+                    str(getattr(v, "source", None) or ""),
                     v.first_seen.strftime("%Y-%m-%d %H:%M") if v.first_seen else "",
                     v.last_seen.strftime("%Y-%m-%d %H:%M") if v.last_seen else "",
                 ]

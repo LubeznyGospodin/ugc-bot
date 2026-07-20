@@ -84,6 +84,41 @@ async def admin_stats(call: CallbackQuery, bot: Bot):
     await render_screen(bot, call.message.chat.id, text, reply_markup=admin_menu_keyboard())
 
 
+@router.callback_query(F.data == "admin:sources")
+async def admin_sources(call: CallbackQuery, bot: Bot):
+    """Разбивка заходов по deep-link меткам (?start=МЕТКА): переходы + конверсия в
+    регистрацию. Считаем только с момента внедрения фичи (прошлые клики не логировались)."""
+    if not _admin_only(call.from_user.id):
+        await call.answer("Недоступно", show_alert=True)
+        return
+    await call.answer()
+
+    from bot.utils.db_helpers import source_stats
+
+    rows = await source_stats()
+    labeled = [r for r in rows if r["source"] is not None]
+    lines = ["🔗 <b>Источники переходов</b> (<code>?start=метка</code>)\n"]
+    if not labeled:
+        lines.append("Пока ни одного захода с меткой.\n")
+    else:
+        lines.append("<b>Метка · заходы · регистрации (конверсия)</b>")
+        for r in labeled:
+            conv = f"{round(r['registered'] / r['visits'] * 100)}%" if r["visits"] else "—"
+            lines.append(
+                f"• <code>{r['source']}</code> — {r['visits']} → "
+                f"{r['registered']} ({conv})"
+            )
+    no_label = next((r for r in rows if r["source"] is None), None)
+    if no_label:
+        lines.append(f"\n<i>Без метки: {no_label['visits']} заходов "
+                     f"(рег.: {no_label['registered']})</i>")
+    lines.append(
+        "\n💡 Ссылка с меткой: <code>t.me/ugc_radarbot?start=МЕТКА</code>\n"
+        "Учёт ведётся с момента запуска фичи (прошлые переходы Telegram не хранит)."
+    )
+    await render_screen(bot, call.message.chat.id, "\n".join(lines), reply_markup=admin_menu_keyboard())
+
+
 @router.callback_query(F.data == "admin:broadcast")
 async def admin_broadcast_start(call: CallbackQuery, state: FSMContext, bot: Bot):
     if not _admin_only(call.from_user.id):

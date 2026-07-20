@@ -68,6 +68,10 @@ class BotVisit(Base):
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     first_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # Метка источника из deep-link (?start=МЕТКА). First-touch: пишем при ПЕРВОМ заходе
+    # и НЕ перезатираем (иначе последний переход украл бы атрибуцию у первого). NULL —
+    # зашёл без метки. Позволяет считать переходы по каждой ссылке ?start=ari и т.п.
+    source: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Когда отправили пуш-напоминание «доделай анкету». NULL — ещё не слали.
     # Значение == NUDGE_EPOCH — «зачищено» на старте фичи (бэклог, авто-луп не трогает).
     nudged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

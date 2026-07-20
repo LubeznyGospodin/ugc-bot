@@ -20,7 +20,7 @@ import asyncio
 import logging
 
 from aiogram import Bot, F, Router
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -44,15 +44,19 @@ def _profile_summary(data: dict) -> str:
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext, bot: Bot):
+async def cmd_start(message: Message, state: FSMContext, bot: Bot, command: CommandObject):
     await state.clear()
 
+    # Метка источника из deep-link ?start=МЕТКА (аргумент команды). Нормализуем: обрезаем
+    # пробелы и до 64 символов. Пусто → None (зашёл без метки).
+    _src = (command.args or "").strip()[:64] or None
+
     # Фиксируем ЗАХОД в бот (для воронки CJM) — неблокирующе, дедуп по tg_id. Считаем
-    # всех, кто нажал /start, даже если дальше не пошли.
+    # всех, кто нажал /start, даже если дальше не пошли. Источник — first-touch.
     _u = message.from_user
     _visit_name = " ".join(filter(None, [_u.first_name, _u.last_name])) or None
     asyncio.create_task(
-        record_visit(_u.id, f"@{_u.username}" if _u.username else None, _visit_name)
+        record_visit(_u.id, f"@{_u.username}" if _u.username else None, _visit_name, source=_src)
     )
 
     # НЕ забываем прошлый экран: пусть render_screen ниже удалит его (иначе после

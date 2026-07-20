@@ -15,9 +15,15 @@ NUDGE_EPOCH = datetime(2026, 7, 12, 20, 40, 0)  # UTC
 NUDGE_DELAY = timedelta(hours=2)
 
 
-async def record_visit(tg_id: int, username: str | None, full_name: str | None) -> None:
+async def record_visit(
+    tg_id: int, username: str | None, full_name: str | None, source: str | None = None
+) -> None:
     """Зафиксировать заход в бот (/start), уникально по tg_id. Для воронки CJM —
-    считаем ВСЕХ, кто нажал старт, даже если дальше не пошли."""
+    считаем ВСЕХ, кто нажал старт, даже если дальше не пошли.
+
+    source — метка из deep-link (?start=МЕТКА). First-touch: проставляем только при
+    ПЕРВОМ заходе (или если раньше метки не было) и НЕ перезатираем — атрибуция за
+    первым переходом."""
     from bot.models import BotVisit
 
     now = datetime.utcnow()
@@ -25,7 +31,10 @@ async def record_visit(tg_id: int, username: str | None, full_name: str | None) 
         v = (await session.execute(select(BotVisit).where(BotVisit.tg_id == tg_id))).scalar_one_or_none()
         if v is None:
             session.add(
-                BotVisit(tg_id=tg_id, username=username, full_name=full_name, first_seen=now, last_seen=now)
+                BotVisit(
+                    tg_id=tg_id, username=username, full_name=full_name,
+                    first_seen=now, last_seen=now, source=source or None,
+                )
             )
         else:
             v.last_seen = now
@@ -33,6 +42,8 @@ async def record_visit(tg_id: int, username: str | None, full_name: str | None) 
                 v.username = username
             if full_name:
                 v.full_name = full_name
+            if source and not v.source:  # не перезатираем уже проставленный источник
+                v.source = source
         await session.commit()
 
 
@@ -174,6 +185,33 @@ async def mark_nudged(tg_id: int) -> None:
         if v is not None:
             v.nudged_at = datetime.utcnow()
             await session.commit()
+
+
+async def source_stats() -> list[dict]:
+    """Разбивка заходов по меткам deep-link (?start=МЕТКА): по каждой метке — сколько
+    зашло и сколько из них дошли до регистрации (tg_id есть в creators). Сортировка:
+    по числу заходов ↓. Метка None (без метки) идёт последней."""
+    from bot.models import BotVisit
+
+    async with get_session() as session:
+        visits = (await session.execute(select(BotVisit))).scalars().all()
+        creator_ids = set((await session.execute(select(Creator.tg_id))).scalars().all())
+
+    agg: dict[str | None, dict[str, int]] = {}
+    for v in visits:
+        src = v.source or None
+        row = agg.setdefault(src, {"visits": 0, "registered": 0})
+        row["visits"] += 1
+        if v.tg_id in creator_ids:
+            row["registered"] += 1
+
+    out = [
+        {"source": src, "visits": d["visits"], "registered": d["registered"]}
+        for src, d in agg.items()
+    ]
+    # Без метки — в конец; остальное по заходам ↓.
+    out.sort(key=lambda r: (r["source"] is None, -r["visits"]))
+    return out
 
 
 async def funnel_stats() -> dict[str, int]:

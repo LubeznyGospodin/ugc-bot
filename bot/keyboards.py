@@ -184,6 +184,7 @@ def admin_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📊 Аналитика", callback_data="admin:stats")],
+            [InlineKeyboardButton(text="🔗 Источники (?start=метки)", callback_data="admin:sources")],
             [InlineKeyboardButton(text="🎬 Воронка «Сингл»", callback_data="admin:single_funnel")],
             [InlineKeyboardButton(text="📣 Рассылка (текст)", callback_data="admin:broadcast")],
             [InlineKeyboardButton(text="📢 Анонс бренда с кнопкой отклика", callback_data="admin:announce")],

@@ -37,6 +37,8 @@ async def init_db() -> None:
     await _alter_column_type("creators", "age", "TEXT")
     # Пуш-напоминание незарегистрированным: когда отправили (NULL — не слали).
     await _add_column_if_missing("bot_visits", "nudged_at", "TIMESTAMP")
+    # Метка источника из deep-link (?start=МЕТКА) — атрибуция переходов по ссылкам.
+    await _add_column_if_missing("bot_visits", "source", "VARCHAR(64)")
     # Реквизиты оплаты в пайплайне «Сингл» (таблица создана раньше — доливаем колонки).
     await _add_column_if_missing("single_pipeline", "payment_phone", "VARCHAR(64)")
     await _add_column_if_missing("single_pipeline", "payment_bank", "TEXT")
