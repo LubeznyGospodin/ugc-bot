@@ -188,7 +188,9 @@ async def nudge_register(call: CallbackQuery, state: FSMContext, bot: Bot):
 async def my_projects(message: Message, bot: Bot):
     from bot.single import my_projects_view
 
-    text, markup = await my_projects_view(message.from_user.id)
+    text, markup = await my_projects_view(
+        message.from_user.id, is_admin=settings.is_admin(message.from_user.id)
+    )
     await bot.send_message(message.chat.id, text, reply_markup=markup)
 
 

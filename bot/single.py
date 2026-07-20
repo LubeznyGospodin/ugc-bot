@@ -256,45 +256,63 @@ async def funnel() -> dict[str, int]:
     }
 
 
+_ADD_LINK_BTN = ("➕ Добавить ещё ссылку", "single:add_link")
+
+
 def _stage_card(p: SinglePipeline):
-    """Карточка текущего этапа проекта «Сингл» для «Мои проекты» — с кнопкой продолжить.
-    Шаг восстанавливается из БД, так что работает даже после /start (сброса FSM)."""
-    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-
+    """(текст, [кнопки]) текущего этапа «Сингл». Шаг восстанавливается из БД."""
     head = "🎵 <b>Проект «Сингл» (ИИ-треки от ЗВУК)</b>\n\n"
-
-    def kb(*btns):
-        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=t, callback_data=c)] for t, c in btns])
-
-    add = ("➕ Добавить ещё ссылку", "single:add_link")
     if p.stage == "offered":
-        return head + "✅ Тебя одобрили! Осталось подтвердить участие.", kb(("✅ Да, участвую", "single:accept"))
+        return head + "✅ Тебя одобрили! Осталось подтвердить участие.", [("✅ Да, участвую", "single:accept")]
     if p.stage == "accepted":
-        return head + "📅 Ты подтвердил участие. Осталось указать срок ролика.", kb(("📅 Указать срок", "single:resume_deadline"))
+        return head + "📅 Ты подтвердил участие. Осталось указать срок ролика.", [("📅 Указать срок", "single:resume_deadline")]
     if p.stage == "producing":
         dl = p.deadline.strftime("%d.%m") if p.deadline else "—"
         return (
-            head + f"🎬 Ты делаешь ролик. Срок: <b>{dl}</b>.\n"
-            "Как выложишь в соцсети — пришли ссылки на посты.",
-            kb(("📹 Отправить ссылки на ролик", "single:submit"), add),
+            head + f"🎬 Ты делаешь ролик. Срок: <b>{dl}</b>.\nКак выложишь в соцсети — пришли ссылки на посты.",
+            [("📹 Отправить ссылки на ролик", "single:submit"), _ADD_LINK_BTN],
         )
     if p.stage == "submitted":
         if p.payment_at is None:
-            return head + "✅ Ролик сдан! Осталось прислать реквизиты для оплаты.", kb(("💳 Отправить реквизиты", "single:resume_payment"), add)
-        return head + "🎉 Всё готово! Ролик сдан, реквизиты приняты. Оплата поступит в течение двух дней.\n\nВыложил ещё? Добавь ссылку — учтём охваты.", kb(add)
-    return head + "Статуса уточняется.", None
+            return head + "✅ Ролик сдан! Осталось прислать реквизиты для оплаты.\nВыложил ещё — жми «Добавить ссылку».", [("💳 Отправить реквизиты", "single:resume_payment"), _ADD_LINK_BTN]
+        return head + "🎉 Ты в проекте, ролик сдан. Выложил ещё (в другую соцсеть/новый ролик)? Добавь ссылку — учтём охваты.", [_ADD_LINK_BTN]
+    return head + "Ты в проекте «Сингл».", [_ADD_LINK_BTN]
 
 
-async def my_projects_view(chat_id: int):
-    """(текст, клавиатура) для экрана «Мои проекты». Пока проект один — «Сингл»."""
+async def _participates_single(chat_id: int) -> bool:
+    """Участвует ли в Сингле по отклику (confirmed=да) — даже без записи пайплайна."""
+    from sqlalchemy import select
+
+    from bot.database import get_session
+    from bot.models import CachedApplication
+
+    async with get_session() as s:
+        apps = (await s.execute(select(CachedApplication).where(CachedApplication.chat_id == chat_id))).scalars().all()
+    return any(is_single(a.brand_title) and (a.confirmed or "").strip().lower() == "да" for a in apps)
+
+
+async def my_projects_view(chat_id: int, is_admin: bool = False):
+    """(текст, клавиатура) экрана «Мои проекты». Показываем «Сингл» всем участникам
+    (пайплайн ИЛИ подтверждённый отклик), с кнопкой добавить ещё видео."""
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
     p = await get_pipeline(chat_id)
-    if p is None:
-        return (
-            "📁 <b>Мои проекты</b>\n\nПока нет активных проектов. Загляни в «🎯 Запросы брендов» "
-            "и откликнись на подходящий — если по нему будет оффер, проект появится здесь.",
-            None,
-        )
-    return _stage_card(p)
+    if p is not None:
+        text, buttons = _stage_card(p)
+    elif await _participates_single(chat_id):
+        text = ("🎵 <b>Проект «Сингл» (ИИ-треки от ЗВУК)</b>\n\nТы в проекте. Выложил ролик "
+                "(в любой соцсети)? Добавь ссылку — учтём охваты.")
+        buttons = [_ADD_LINK_BTN]
+    elif not is_admin:
+        return ("📁 <b>Мои проекты</b>\n\nПока нет активных проектов. Загляни в «🎯 Запросы брендов» "
+                "и откликнись — если будет оффер, проект появится здесь.", None)
+    else:
+        text, buttons = "📁 <b>Мои проекты</b>\n\nЛичных проектов нет.", []
+
+    if is_admin:  # админу — ручное добавление ролика за креатора (имя + ссылка)
+        buttons = list(buttons) + [("➕ Добавить ролик за креатора", "admin:add_video")]
+    rows = [[InlineKeyboardButton(text=t, callback_data=c)] for t, c in buttons]
+    return text, (InlineKeyboardMarkup(inline_keyboard=rows) if rows else None)
 
 
 def funnel_text(f: dict[str, int]) -> str:
