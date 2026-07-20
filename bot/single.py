@@ -35,8 +35,10 @@ MSK = timedelta(hours=3)  # сервер в UTC; для «утра по Моск
 
 
 def is_single(brand_title: str | None) -> bool:
-    """Относится ли отклик к проекту «Сингл» (единственный бренд со словом «сингл»)."""
-    return "сингл" in (brand_title or "").lower()
+    """Относится ли отклик к проекту «Сингл»/ЗВУК. Проект в таблице под двумя именами:
+    «Сингл (…СберЗВУК)» и старое «ИИ-Композитор (…ЗВУК)» — считаем их одним проектом."""
+    t = (brand_title or "").lower()
+    return ("звук" in t) or ("сингл" in t) or ("композитор" in t)
 
 
 # ── Тексты ────────────────────────────────────────────────────────────────────
@@ -228,16 +230,29 @@ async def save_payment(chat_id: int, phone: str, bank: str) -> None:
 
 # ── Воронка ───────────────────────────────────────────────────────────────────
 async def funnel() -> dict[str, int]:
+    """Воронка «Сингл» из ЕДИНОГО источника — листа «Отклики» (через кэш). Учитывает и
+    бот-пайплайн (зеркалит Подтвердил/Ссылку), и перенесённые вручную данные. Агрегируем
+    по chat_id (человек = один участник, даже если есть отклики под обоими названиями)."""
     async with get_session() as s:
         apps = (await s.execute(select(CachedApplication))).scalars().all()
-        pipe = (await s.execute(select(SinglePipeline))).scalars().all()
-    single_apps = [a for a in apps if is_single(a.brand_title)]
+    by_chat: dict[int, dict] = {}
+    for a in apps:
+        if not is_single(a.brand_title):
+            continue
+        d = by_chat.setdefault(a.chat_id, {"offer": False, "confirmed": False, "video": False})
+        if (a.status or "").strip().lower() == "оффер":
+            d["offer"] = True
+        if (a.confirmed or "").strip().lower() == "да":
+            d["confirmed"] = True
+        if (a.video or "").strip():
+            d["video"] = True
+    v = list(by_chat.values())
     return {
-        "otkliki": len(single_apps),
-        "offers": sum(1 for a in single_apps if (a.status or "").strip().lower() == "оффер"),
-        "accepted": sum(1 for p in pipe if p.stage in ("accepted", "producing", "submitted")),
-        "producing": sum(1 for p in pipe if p.stage == "producing"),
-        "submitted": sum(1 for p in pipe if p.stage == "submitted"),
+        "otkliki": len(v),
+        "offers": sum(1 for d in v if d["offer"]),
+        "accepted": sum(1 for d in v if d["confirmed"]),
+        "producing": sum(1 for d in v if d["confirmed"] and not d["video"]),
+        "submitted": sum(1 for d in v if d["video"]),
     }
 
 

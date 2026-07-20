@@ -144,4 +144,7 @@ class CachedApplication(Base):
     status: Mapped[str] = mapped_column(String(64), default="на рассмотрении")
     reason: Mapped[str] = mapped_column(Text, default="")
     date: Mapped[str] = mapped_column(String(32), default="")
+    # Пайплайн «Сингл» (зеркало новых колонок листа) — для воронки/аналитики.
+    confirmed: Mapped[str | None] = mapped_column(String(16), nullable=True)  # «Подтвердил участие»
+    video: Mapped[str | None] = mapped_column(Text, nullable=True)  # «Ссылка на ролик»
     synced_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

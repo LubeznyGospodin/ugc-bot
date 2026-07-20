@@ -41,6 +41,9 @@ async def init_db() -> None:
     await _add_column_if_missing("single_pipeline", "payment_phone", "VARCHAR(64)")
     await _add_column_if_missing("single_pipeline", "payment_bank", "TEXT")
     await _add_column_if_missing("single_pipeline", "payment_at", "TIMESTAMP")
+    # Зеркало колонок «Подтвердил»/«Ссылка на ролик» в кэше откликов — для воронки «Сингл».
+    await _add_column_if_missing("cached_applications", "confirmed", "VARCHAR(16)")
+    await _add_column_if_missing("cached_applications", "video", "TEXT")
 
 
 async def _add_column_if_missing(table: str, column: str, coltype: str) -> None:

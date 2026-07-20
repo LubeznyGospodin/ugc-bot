@@ -260,6 +260,8 @@ async def sync_applications() -> int:
                     status=status,
                     reason=reason,
                     date=str(it.get("date") or ""),
+                    confirmed=str(it.get("confirmed") or ""),
+                    video=str(it.get("video") or ""),
                     synced_at=now,
                 )
             )
