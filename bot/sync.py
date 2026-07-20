@@ -88,15 +88,20 @@ async def cache_applications(chat_id: int, apps: list[Application]) -> None:
         await session.commit()
 
 
-async def add_cached_application(chat_id: int, brand_title: str) -> None:
+async def add_cached_application(
+    chat_id: int, brand_title: str, status: str = "на рассмотрении"
+) -> None:
     """Мгновенно добавляет один отклик в БД-кэш (при нажатии «Откликнуться»),
-    чтобы он сразу был виден в «Мои отклики», не дожидаясь записи в таблицу."""
+    чтобы он сразу был виден в «Мои отклики», не дожидаясь записи в таблицу.
+
+    status — для «Сингл» передаём «оффер» (авто-оффер), чтобы следующий sync не
+    увидел ложный переход «на рассмотрении»→«оффер» и не задвоил пуш-приглашение."""
     async with get_session() as session:
         session.add(
             CachedApplication(
                 chat_id=chat_id,
                 brand_title=brand_title,
-                status="на рассмотрении",
+                status=status,
                 reason="",
                 date="",
                 synced_at=datetime.utcnow(),

@@ -252,20 +252,25 @@ class SheetsClient:
         name: str,
         telegram: str,
         chat_id: int,
+        status: str | None = None,
     ) -> dict[str, Any]:
         """Записать отклик на бренд — action=apply. Возвращает payload:
         {ok, duplicate, status, reason}. duplicate=True — отклик уже существует
-        (тот же Chat ID + Бренд ID), тогда status/reason — текущие по нему."""
-        return await self._post(
-            {
-                "action": "apply",
-                "brand_id": brand_id,
-                "brand_title": brand_title,
-                "name": name,
-                "telegram": telegram,
-                "chat_id": chat_id,
-            }
-        )
+        (тот же Chat ID + Бренд ID), тогда status/reason — текущие по нему.
+
+        status — целевой статус (шлём только для «Сингл»: отклик = авто-оффер). Если
+        строка уже есть с иным статусом — таблица сама проставит нужный (upgraded=True)."""
+        payload: dict[str, Any] = {
+            "action": "apply",
+            "brand_id": brand_id,
+            "brand_title": brand_title,
+            "name": name,
+            "telegram": telegram,
+            "chat_id": chat_id,
+        }
+        if status:
+            payload["status"] = status
+        return await self._post(payload)
 
     async def my_applications(self, chat_id: int) -> list[Application]:
         """Отклики конкретного креатора со статусом — action=my_applications,

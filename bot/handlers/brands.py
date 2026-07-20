@@ -211,8 +211,58 @@ async def brand_card(call: CallbackQuery, bot: Bot):
     await render_screen(bot, call.message.chat.id, text, reply_markup=brand_card_keyboard(brand.id))
 
 
+async def _single_auto_offer(bot, chat_id, brand_title, res, name, telegram, call) -> None:
+    """«Сингл» — open-enrollment: отклик == оффер. Таблица уже проставила «оффер»
+    (или апгрейднула отказ/на рассмотрении). Здесь запускаем пайплайн и шлём условия
+    + кнопку «Участвую». Ручной труд админа не нужен."""
+    from bot.sync import _notify_status, add_cached_application
+
+    status = str(res.get("status") or "").strip().lower()
+    already = bool(res.get("duplicate")) and not res.get("upgraded") and status == "оффер"
+
+    if already:
+        # Уже в проекте (оффер стоял) — не спамим, просто подсказываем, где продолжить.
+        await render_screen(
+            bot, chat_id,
+            "🎬 Ты уже в проекте «Сингл»! Продолжить участие — в меню «📁 Мои проекты».",
+            reply_markup=back_to_list_keyboard(),
+        )
+        await _notify_status(chat_id, brand_title, "оффер", "")  # идемпотентно (без повторной отправки)
+        try:
+            await add_cached_application(chat_id, brand_title, status="оффер")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("add_cached_application (single) failed: %s", e)
+        return
+
+    # Новый участник (или апгрейд из «отказ»/«на рассмотрении»).
+    await render_screen(
+        bot, chat_id,
+        "🎬 Отлично, берём тебя в проект «Сингл»! Условия и кнопку «✅ Да, участвую» "
+        "пришлю следующим сообщением 👇",
+        reply_markup=back_to_list_keyboard(),
+    )
+    # Кэш → «оффер», чтобы sync не увидел ложный переход и не задвоил приглашение.
+    try:
+        await add_cached_application(chat_id, brand_title, status="оффер")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("add_cached_application (single) failed: %s", e)
+    # Уведомляем админов о новом участнике.
+    for admin_id in settings.admin_ids:
+        try:
+            await bot.send_message(
+                admin_id,
+                f"🎵 Новый участник «Сингл» (авто-оффер): "
+                f"{name or call.from_user.full_name} ({telegram or '—'}), id {chat_id}",
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("notify admin %s about single join failed", admin_id)
+    # Запускаем пайплайн + шлём OFFER_TEXT с кнопкой «Участвую» (start_offer идемпотентен).
+    await _notify_status(chat_id, brand_title, "оффер", "")
+
+
 @router.callback_query(F.data.startswith("brand_apply:"))
 async def brand_apply(call: CallbackQuery, bot: Bot):
+    from bot.single import is_single
     from bot.sync import add_cached_application
 
     await call.answer()
@@ -222,6 +272,7 @@ async def brand_apply(call: CallbackQuery, bot: Bot):
     brands = await _fetch_brands()
     brand = next((b for b in brands if b.id == brand_id), None)
     brand_title = brand.title if brand else brand_id
+    single = is_single(brand_title)  # «Сингл» — open-enrollment: отклик = авто-оффер.
 
     creator = await get_creator_by_tg_id(chat_id)
     name = (getattr(creator, "full_name", None) if creator else None) or call.from_user.full_name or ""
@@ -230,9 +281,13 @@ async def brand_apply(call: CallbackQuery, bot: Bot):
     )
 
     # Отклик пишем СИНХРОННО (под индикатором): нужно поймать дубль и показать статус.
+    # Для «Сингл» просим таблицу сразу проставить «оффер» (исключаем ручной труд админа).
     async with loading_guard(bot, chat_id, text="Отправляю отклик…"):
         try:
-            res = await sheets_client.apply(brand_id, brand_title, name, telegram, chat_id)
+            res = await sheets_client.apply(
+                brand_id, brand_title, name, telegram, chat_id,
+                status="оффер" if single else None,
+            )
         except SheetsError as e:
             logger.warning("brand apply failed: %s", e)
             res = None
@@ -253,6 +308,11 @@ async def brand_apply(call: CallbackQuery, bot: Bot):
             "Нажми /start — это займёт пару минут.",
             reply_markup=back_to_list_keyboard(),
         )
+        return
+
+    # ── «Сингл»: авто-оффер → сразу запускаем пайплайн, без ручного клика в таблице.
+    if single:
+        await _single_auto_offer(bot, chat_id, brand_title, res, name, telegram, call)
         return
 
     # Повторный отклик запрещён — показываем текущий статус (и причину, если есть).
