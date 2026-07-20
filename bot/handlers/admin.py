@@ -42,6 +42,18 @@ def _admin_only(user_id: int) -> bool:
     return settings.is_admin(user_id)
 
 
+def _message_html(message: Message) -> str:
+    """Текст сообщения c разметкой (жирный/курсив/ссылки) как HTML — чтобы форматирование
+    доехало до креаторов (рассылка идёт с parse_mode=HTML). Работает и для подписи к фото."""
+    if message.text is not None:
+        return message.html_text
+    if message.caption is not None:
+        from aiogram.utils.text_decorations import html_decoration
+
+        return html_decoration.unparse(message.caption, message.caption_entities or [])
+    return ""
+
+
 @router.message(Command("admin"))
 @router.message(F.text == BTN_ADMIN)
 async def admin_menu(message: Message, bot: Bot):
@@ -86,13 +98,14 @@ async def admin_broadcast_start(call: CallbackQuery, state: FSMContext, bot: Bot
 async def admin_broadcast_text(message: Message, state: FSMContext, bot: Bot):
     if not _admin_only(message.from_user.id):
         return
-    await state.update_data(broadcast_text=message.text)
+    bc_html = _message_html(message)
+    await state.update_data(broadcast_text=bc_html)
     count = await count_creators()
     await state.set_state(BroadcastFSM.waiting_confirm)
     await render_screen(
         bot,
         message.chat.id,
-        f"Отправить это сообщение {count} креаторам?\n\n---\n{message.text}\n---",
+        f"Отправить это сообщение {count} креаторам?\n\n---\n{bc_html}\n---",
         reply_markup=broadcast_confirm_keyboard(),
         delete_trigger=message,
     )
@@ -256,7 +269,7 @@ async def announce_pick_brand(call: CallbackQuery, state: FSMContext, bot: Bot):
 async def announce_text(message: Message, state: FSMContext, bot: Bot):
     if not _admin_only(message.from_user.id):
         return
-    await state.update_data(announce_text=message.text or message.caption or "")
+    await state.update_data(announce_text=_message_html(message))
     data = await state.get_data()
     if data.get("announce_mode") == "single_cold":
         from bot.single import single_announce_audience
