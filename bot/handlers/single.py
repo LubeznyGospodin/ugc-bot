@@ -97,6 +97,47 @@ async def single_resume_payment(call: CallbackQuery, state: FSMContext, bot: Bot
     await bot.send_message(call.message.chat.id, ASK_PAYMENT_TEXT)
 
 
+async def _track_links(tg_id: int, text: str) -> int:
+    """Все ссылки из сообщения → в трекинг охватов. Имя креатора берём из БД. → сколько добавлено."""
+    from bot.reach import add_reach_link, extract_urls
+    from bot.utils.db_helpers import get_creator_by_tg_id
+
+    urls = extract_urls(text)
+    if not urls:
+        return 0
+    creator = await get_creator_by_tg_id(tg_id)
+    name = (getattr(creator, "full_name", None) if creator else None) or ""
+    tg = (getattr(creator, "telegram_contact", None) if creator else None) or ""
+    added = 0
+    for u in urls:
+        new, _ = await add_reach_link(u, name, tg)
+        added += 1 if new else 0
+    return added
+
+
+@router.callback_query(F.data == "single:add_link")
+async def single_add_link_start(call: CallbackQuery, state: FSMContext, bot: Bot):
+    """Креатор: «добавить ещё ссылку» — только ссылку, имя берём из БД."""
+    await call.answer()
+    await state.set_state(SingleFSM.waiting_extra_links)
+    await bot.send_message(
+        call.message.chat.id,
+        "🔗 Пришли ссылку(и) на новые ролики (можно несколько, каждую с новой строки) — "
+        "учтём их охваты в статистике проекта.",
+    )
+
+
+@router.message(SingleFSM.waiting_extra_links)
+async def single_add_link(message: Message, state: FSMContext, bot: Bot):
+    text = (message.text or message.caption or "").strip()
+    if "http" not in text.lower():
+        await message.answer("Это не похоже на ссылку 🙈 Пришли ссылку на пост (начинается с http…).")
+        return
+    n = await _track_links(message.from_user.id, text)
+    await state.clear()
+    await message.answer(f"✅ Добавил в трекинг: {n}. Охваты появятся в статистике при ближайшем обновлении.")
+
+
 @router.message(SingleFSM.waiting_links)
 async def single_links(message: Message, state: FSMContext, bot: Bot):
     text = (message.text or message.caption or "").strip()
@@ -106,6 +147,8 @@ async def single_links(message: Message, state: FSMContext, bot: Bot):
         return
     await submit_links(message.from_user.id, text)
     _mirror(message.from_user.id, {"links": text})
+    # Ссылки → в трекинг охватов (дата добавления = сейчас).
+    await _track_links(message.from_user.id, text)
     # После ссылок → просим реквизиты для оплаты по СБП.
     await state.set_state(SingleFSM.waiting_payment)
     await message.answer(DONE_TEXT)

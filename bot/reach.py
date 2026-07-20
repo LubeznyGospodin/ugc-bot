@@ -229,8 +229,38 @@ def fetch_reach(url: str) -> tuple[str, int | None, str | None]:
     return pl, views, err
 
 
-# ── Оркестрация: сбор всех ссылок → БД → клиентская таблица ────────────────────
+# ── Добавление ссылок в трекинг (из бота: креатор/админ) ──────────────────────
 _URL_RE = re.compile(r"https?://[^\s,]+")
+
+
+def extract_urls(text: str) -> list[str]:
+    return [u.rstrip(").,") for u in _URL_RE.findall(text or "")]
+
+
+async def add_reach_link(url: str, creator: str, telegram: str = "") -> tuple[bool, str]:
+    """Добавить ссылку в трекинг охватов. Дата добавления = сейчас. Возвращает (новая?, платформа)."""
+    from datetime import datetime
+
+    from sqlalchemy import select
+
+    from bot.database import get_session
+    from bot.models import ReachRow
+
+    url = url.rstrip(").,").strip()
+    platform = detect_platform(url)
+    async with get_session() as s:
+        row = (await s.execute(select(ReachRow).where(ReachRow.url == url))).scalar_one_or_none()
+        if row is not None:
+            row.active = True  # уже есть — не дублируем, не сбрасываем дату
+            await s.commit()
+            return False, platform
+        s.add(ReachRow(url=url, creator=creator, telegram=telegram, platform=platform,
+                       first_seen=datetime.utcnow(), active=True))
+        await s.commit()
+    return True, platform
+
+
+# ── Оркестрация: сбор всех ссылок → БД → клиентская таблица ────────────────────
 
 
 async def reach_run(bot) -> dict:
@@ -304,9 +334,12 @@ async def reach_run(bot) -> dict:
             return "🔥 >10к"
         return "✓"
 
-    rows_db.sort(key=lambda r: (-(r.views or -1)))
+    # порядок: по дате добавления (новые внизу) — сортировку в таблице делает пользователь,
+    # бот только апсертит (см. doReachWrite_).
+    rows_db.sort(key=lambda r: (r.first_seen or now))
     sheet_rows = [
         {
+            "date_added": (r.first_seen + MSK).strftime("%d.%m.%Y") if r.first_seen else "",
             "creator": r.creator or "—",
             "platform": r.platform,
             "url": r.url,

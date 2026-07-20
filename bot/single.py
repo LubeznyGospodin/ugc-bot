@@ -263,25 +263,26 @@ def _stage_card(p: SinglePipeline):
 
     head = "🎵 <b>Проект «Сингл» (ИИ-треки от ЗВУК)</b>\n\n"
 
-    def kb(text, cb):
-        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=text, callback_data=cb)]])
+    def kb(*btns):
+        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=t, callback_data=c)] for t, c in btns])
 
+    add = ("➕ Добавить ещё ссылку", "single:add_link")
     if p.stage == "offered":
-        return head + "✅ Тебя одобрили! Осталось подтвердить участие.", kb("✅ Да, участвую", "single:accept")
+        return head + "✅ Тебя одобрили! Осталось подтвердить участие.", kb(("✅ Да, участвую", "single:accept"))
     if p.stage == "accepted":
-        return head + "📅 Ты подтвердил участие. Осталось указать срок ролика.", kb("📅 Указать срок", "single:resume_deadline")
+        return head + "📅 Ты подтвердил участие. Осталось указать срок ролика.", kb(("📅 Указать срок", "single:resume_deadline"))
     if p.stage == "producing":
         dl = p.deadline.strftime("%d.%m") if p.deadline else "—"
         return (
             head + f"🎬 Ты делаешь ролик. Срок: <b>{dl}</b>.\n"
             "Как выложишь в соцсети — пришли ссылки на посты.",
-            kb("📹 Отправить ссылки на ролик", "single:submit"),
+            kb(("📹 Отправить ссылки на ролик", "single:submit"), add),
         )
     if p.stage == "submitted":
         if p.payment_at is None:
-            return head + "✅ Ролик сдан! Осталось прислать реквизиты для оплаты.", kb("💳 Отправить реквизиты", "single:resume_payment")
-        return head + "🎉 Всё готово! Ролик сдан, реквизиты приняты. Оплата поступит в течение двух дней.", None
-    return head + "Статус уточняется.", None
+            return head + "✅ Ролик сдан! Осталось прислать реквизиты для оплаты.", kb(("💳 Отправить реквизиты", "single:resume_payment"), add)
+        return head + "🎉 Всё готово! Ролик сдан, реквизиты приняты. Оплата поступит в течение двух дней.\n\nВыложил ещё? Добавь ссылку — учтём охваты.", kb(add)
+    return head + "Статуса уточняется.", None
 
 
 async def my_projects_view(chat_id: int):

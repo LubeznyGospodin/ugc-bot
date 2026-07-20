@@ -48,3 +48,11 @@ class SingleFSM(StatesGroup):
     waiting_deadline = State()
     waiting_links = State()
     waiting_payment = State()
+    waiting_extra_links = State()  # «добавить ещё ссылку» из «Мои проекты»
+
+
+class AddVideoFSM(StatesGroup):
+    """Ручное добавление ролика в трекинг охватов админом: имя → ссылка(и)."""
+
+    waiting_name = State()
+    waiting_link = State()

@@ -29,7 +29,7 @@ from bot.keyboards import (
 )
 from bot.models import Creator
 from bot.sheets import SheetsError, sheets_client
-from bot.states import AnnounceFSM, BroadcastFSM
+from bot.states import AddVideoFSM, AnnounceFSM, BroadcastFSM
 from bot.utils.chat_cleanup import render_screen
 from bot.utils.db_helpers import count_creators, funnel_stats
 from bot.utils.export import export_creators_xlsx, export_unregistered_xlsx, export_visits_xlsx
@@ -285,6 +285,55 @@ async def announce_send(call: CallbackQuery, state: FSMContext, bot: Bot):
     await render_screen(
         bot, call.message.chat.id,
         f"✅ Анонс разослан.\nДоставлено: {sent}\nНе удалось: {failed}",
+        reply_markup=admin_menu_keyboard(),
+    )
+
+
+@router.message(Command("addvideo"))
+@router.callback_query(F.data == "admin:add_video")
+async def add_video_start(event, bot: Bot, state: FSMContext):
+    """Ручное добавление ролика в трекинг охватов (Сингл): имя → ссылка."""
+    uid = event.from_user.id
+    chat_id = event.message.chat.id if isinstance(event, CallbackQuery) else event.chat.id
+    if not _admin_only(uid):
+        if isinstance(event, CallbackQuery):
+            await event.answer("Недоступно", show_alert=True)
+        return
+    if isinstance(event, CallbackQuery):
+        await event.answer()
+    await state.set_state(AddVideoFSM.waiting_name)
+    await render_screen(bot, chat_id, "➕ Добавление ролика.\n\nИмя и фамилия креатора?")
+
+
+@router.message(AddVideoFSM.waiting_name)
+async def add_video_name(message: Message, state: FSMContext, bot: Bot):
+    if not _admin_only(message.from_user.id):
+        return
+    await state.update_data(av_name=(message.text or "").strip())
+    await state.set_state(AddVideoFSM.waiting_link)
+    await render_screen(bot, message.chat.id, "Ссылка(и) на ролик (можно несколько, с новой строки)?", delete_trigger=message)
+
+
+@router.message(AddVideoFSM.waiting_link)
+async def add_video_link(message: Message, state: FSMContext, bot: Bot):
+    if not _admin_only(message.from_user.id):
+        return
+    text = (message.text or "").strip()
+    if "http" not in text.lower():
+        await render_screen(bot, message.chat.id, "Не вижу ссылку 🙈 Пришли URL (http…).", delete_trigger=message)
+        return
+    data = await state.get_data()
+    name = data.get("av_name", "")
+    await state.clear()
+    from bot.reach import add_reach_link, extract_urls
+
+    added = 0
+    for u in extract_urls(text):
+        new, _ = await add_reach_link(u, name)
+        added += 1 if new else 0
+    await render_screen(
+        bot, message.chat.id,
+        f"✅ Добавил ролик(и): {added} для «{name}». Охваты появятся при ближайшем /reach или авто-прогоне.",
         reply_markup=admin_menu_keyboard(),
     )
 
