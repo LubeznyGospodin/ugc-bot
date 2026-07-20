@@ -123,6 +123,23 @@ class SinglePipeline(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class ReachRow(Base):
+    """Охват по одному ролику (проект «Сингл»). Храним последнее УСПЕШНОЕ значение,
+    чтобы при разовом сбое парсинга не терять цифру — показываем прошлую + пометку ⚠️."""
+
+    __tablename__ = "reach_rows"
+
+    url: Mapped[str] = mapped_column(String(512), primary_key=True)
+    creator: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    telegram: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    platform: Mapped[str] = mapped_column(String(16), default="")
+    views: Mapped[int | None] = mapped_column(Integer, nullable=True)   # последнее успешное
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # когда успешно
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_try_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)  # ссылка ещё есть в «Отклики»
+
+
 class AppState(Base):
     """Мелкое key→value хранилище для служебных отметок (напр. дата последнего
     утреннего отчёта — чтобы не слать дважды после рестарта)."""

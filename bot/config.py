@@ -62,6 +62,12 @@ class Settings:
     # раз в несколько минут. Если пинги пропали (хостинг встал) — монитор шлёт алерт.
     heartbeat_url: str = field(default_factory=lambda: os.getenv("HEARTBEAT_URL", "").strip())
 
+    # Сбор охватов по роликам (проект «Сингл») → клиентская таблица.
+    youtube_api_key: str = field(default_factory=lambda: os.getenv("YOUTUBE_API_KEY", "").strip())
+    vk_token: str = field(default_factory=lambda: os.getenv("VK_TOKEN", "").strip())
+    ensembledata_token: str = field(default_factory=lambda: os.getenv("ENSEMBLEDATA_TOKEN", "").strip())
+    reach_sheet_id: str = field(default_factory=lambda: os.getenv("REACH_SHEET_ID", "").strip())
+
     # Пороги confidence для дедупа (см. doLookup_ в Apps Script — держим синхронно)
     lookup_auto_match_threshold: float = 0.92
     lookup_confirm_threshold: float = 0.70

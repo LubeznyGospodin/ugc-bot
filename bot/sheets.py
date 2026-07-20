@@ -213,6 +213,12 @@ class SheetsClient:
         items = payload if isinstance(payload, list) else payload.get("items", [])
         return [i for i in items if isinstance(i, dict)]
 
+    async def reach_write(self, sheet_id: str, rows: list[dict], total: int) -> dict[str, Any]:
+        """Записать охваты в клиентскую таблицу (openById в Apps Script)."""
+        return await self._post(
+            {"action": "reach_write", "sheet_id": sheet_id, "rows": rows, "total": total}
+        )
+
     async def profile(self, chat_id: int) -> dict[str, Any] | None:
         """Живой профиль креатора из таблицы по Chat ID (action=profile).
         Apps Script читает строку по колонке «Chat ID» и отдаёт поля по ЗАГОЛОВКАМ

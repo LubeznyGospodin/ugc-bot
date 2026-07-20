@@ -72,6 +72,11 @@ async def main() -> None:
 
     asyncio.create_task(run_ops_loop(bot))
 
+    # Сбор охватов по роликам «Сингл» → клиентская таблица (раз в сутки).
+    from bot.reach import run_reach_loop
+
+    asyncio.create_task(run_reach_loop(bot))
+
     logger.info("Бот запускается (polling)...")
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)

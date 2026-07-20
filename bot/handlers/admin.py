@@ -289,6 +289,26 @@ async def announce_send(call: CallbackQuery, state: FSMContext, bot: Bot):
     )
 
 
+@router.message(Command("reach"))
+async def reach_cmd(message: Message, bot: Bot):
+    """Ручной сбор охватов + запись клиентской таблицы (обычно раз в сутки авто)."""
+    if not _admin_only(message.from_user.id):
+        return
+    await render_screen(bot, message.chat.id, "📊 Собираю охваты по всем роликам…", delete_trigger=message)
+    from bot.reach import reach_run
+
+    res = await reach_run(bot)
+    if res.get("ok"):
+        await render_screen(
+            bot, message.chat.id,
+            f"✅ Готово.\nСсылок: {res['links']}\nСуммарный охват: {res['total']:,}\n"
+            f"Не спарсилось: {res['failed']}".replace(",", " "),
+            reply_markup=admin_menu_keyboard(),
+        )
+    else:
+        await render_screen(bot, message.chat.id, f"❌ {res.get('error')}", reply_markup=admin_menu_keyboard())
+
+
 @router.message(Command("hosting_due"))
 async def hosting_due_cmd(message: Message, bot: Bot):
     """Задать дату оплаты хостинга: /hosting_due 15.08.2026 (или 15.08)."""
