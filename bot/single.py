@@ -279,6 +279,24 @@ def _stage_card(p: SinglePipeline):
     return head + "Ты в проекте «Сингл».", [_ADD_LINK_BTN]
 
 
+async def single_announce_audience() -> list[int]:
+    """Кому слать анонс Сингла: креаторы бота, которые НИКОГДА не откликались на Сингл
+    ИЛИ у кого стоит «отказ». Исключаем «на рассмотрении»/«оффер» (они уже в работе)."""
+    from sqlalchemy import select
+
+    from bot.database import get_session
+    from bot.models import CachedApplication, Creator
+
+    async with get_session() as s:
+        creators = [c.tg_id for c in (await s.execute(select(Creator))).scalars().all()]
+        apps = (await s.execute(select(CachedApplication))).scalars().all()
+    engaged = {
+        a.chat_id for a in apps
+        if is_single(a.brand_title) and (a.status or "").strip().lower() in ("оффер", "на рассмотрении")
+    }
+    return [tg for tg in creators if tg not in engaged]
+
+
 async def _participates_single(chat_id: int) -> bool:
     """Участвует ли в Сингле по отклику (confirmed=да) — даже без записи пайплайна."""
     from sqlalchemy import select

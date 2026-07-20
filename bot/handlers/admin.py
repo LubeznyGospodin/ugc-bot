@@ -208,6 +208,27 @@ async def announce_start(event, bot: Bot, state: FSMContext):
     )
 
 
+@router.callback_query(F.data == "admin:announce_single")
+async def announce_single_start(call: CallbackQuery, state: FSMContext, bot: Bot):
+    """Анонс Сингла ТОЛЬКО тем, кто не откликался на него или получил отказ."""
+    if not _admin_only(call.from_user.id):
+        await call.answer("Недоступно", show_alert=True)
+        return
+    await call.answer()
+    await state.clear()
+    await state.update_data(
+        announce_brand_id="br1",
+        announce_brand_title="Сингл (ИИ-треки от ЗВУК)",
+        announce_mode="single_cold",
+    )
+    await state.set_state(AnnounceFSM.waiting_text)
+    await render_screen(
+        bot, call.message.chat.id,
+        "📢 Анонс «Сингл» — только тем, кто <b>не откликался</b> на него или получил <b>отказ</b>.\n\n"
+        "Пришли текст анонса. Внизу будет кнопка «🙋 Откликнуться».",
+    )
+
+
 @router.callback_query(F.data.startswith("announce_brand:"))
 async def announce_pick_brand(call: CallbackQuery, state: FSMContext, bot: Bot):
     if not _admin_only(call.from_user.id):
@@ -237,12 +258,21 @@ async def announce_text(message: Message, state: FSMContext, bot: Bot):
         return
     await state.update_data(announce_text=message.text or message.caption or "")
     data = await state.get_data()
-    count = await count_creators()
+    if data.get("announce_mode") == "single_cold":
+        from bot.single import single_announce_audience
+
+        ids = await single_announce_audience()
+        await state.update_data(announce_ids=ids)
+        count = len(ids)
+        who = "не откликавшимся на «Сингл» / с отказом"
+    else:
+        count = await count_creators()
+        who = "всем креаторам"
     await state.set_state(AnnounceFSM.waiting_confirm)
     await render_screen(
         bot, message.chat.id,
-        f"Анонс бренда <b>{data.get('announce_brand_title')}</b>.\n"
-        f"Получат: <b>{count}</b> креаторов.\n\n———\n{data.get('announce_text')}\n———\n"
+        f"Анонс <b>{data.get('announce_brand_title')}</b>.\n"
+        f"Получат: <b>{count}</b> ({who}).\n\n———\n{data.get('announce_text')}\n———\n"
         "Внизу у каждого будет кнопка «🙋 Откликнуться».",
         reply_markup=announce_confirm_keyboard(count),
         delete_trigger=message,
@@ -268,8 +298,10 @@ async def announce_send(call: CallbackQuery, state: FSMContext, bot: Bot):
     await call.answer("Рассылаю анонс...")
     await render_screen(bot, call.message.chat.id, "📢 Рассылаю анонс...")
 
-    async with get_session() as session:
-        chat_ids = [row[0] for row in (await session.execute(select(Creator.tg_id))).all()]
+    chat_ids = data.get("announce_ids")  # таргет-аудитория (single_cold); иначе все
+    if not chat_ids:
+        async with get_session() as session:
+            chat_ids = [row[0] for row in (await session.execute(select(Creator.tg_id))).all()]
 
     kb = apply_button_keyboard(brand_id)
     sent, failed = 0, 0

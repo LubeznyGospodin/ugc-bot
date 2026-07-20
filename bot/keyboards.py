@@ -187,6 +187,7 @@ def admin_menu_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="🎬 Воронка «Сингл»", callback_data="admin:single_funnel")],
             [InlineKeyboardButton(text="📣 Рассылка (текст)", callback_data="admin:broadcast")],
             [InlineKeyboardButton(text="📢 Анонс бренда с кнопкой отклика", callback_data="admin:announce")],
+            [InlineKeyboardButton(text="🎵 Анонс «Сингл» (не откликавшимся)", callback_data="admin:announce_single")],
             [InlineKeyboardButton(text="📤 Экспорт креаторов", callback_data="admin:export")],
             [InlineKeyboardButton(text="📥 Экспорт заходов (все)", callback_data="admin:export_visits")],
             [InlineKeyboardButton(text="🙈 Экспорт: заходили, но не зарегались", callback_data="admin:export_unreg")],
