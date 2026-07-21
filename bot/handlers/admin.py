@@ -411,9 +411,14 @@ async def add_video_link(message: Message, state: FSMContext, bot: Bot):
     for u in extract_urls(text):
         new, _ = await add_reach_link(u, name)
         added += 1 if new else 0
+    if added:  # ссылки в таблицу сразу (без парсинга охватов — юниты не тратим)
+        from bot.handlers.single import _push_links_to_sheet
+
+        _push_links_to_sheet()
     await render_screen(
         bot, message.chat.id,
-        f"✅ Добавил ролик(и): {added} для «{name}». Охваты появятся при ближайшем /reach или авто-прогоне.",
+        f"✅ Добавил ролик(и): {added} для «{name}» — уже в таблице.\n"
+        "Охват подтянется ближайшим авто-прогоном (10:00 МСК) или по /reach.",
         reply_markup=admin_menu_keyboard(),
     )
 

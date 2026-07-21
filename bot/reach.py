@@ -316,6 +316,87 @@ async def add_reach_link(url: str, creator: str, telegram: str = "") -> tuple[bo
 # ── Оркестрация: сбор всех ссылок → БД → клиентская таблица ────────────────────
 
 
+async def write_reach_sheet(prev_map: dict[str, int | None] | None = None) -> dict:
+    """Выгрузить текущее состояние трекинга в клиентскую таблицу.
+
+    ВАЖНО: охваты НЕ парсит — ни одного запроса к платным API (только Google Sheets).
+    Поэтому вызывается сразу при добавлении ссылки: ссылка появляется в таблице
+    мгновенно (с «нет данных»), а цифра охвата подтянется ближайшим reach_run.
+
+    prev_map — что бот писал в таблицу в прошлый раз (для детекта ручной правки);
+    по умолчанию берём текущие значения из БД."""
+    from datetime import datetime
+
+    from sqlalchemy import select
+
+    from bot.database import get_session
+    from bot.models import ReachRow
+    from bot.sheets import SheetsError, sheets_client
+    from bot.single import MSK
+
+    if not settings.reach_sheet_id:
+        return {"ok": False, "error": "нет REACH_SHEET_ID"}
+
+    now = datetime.utcnow()
+    freeze_days = settings.reach_freeze_days
+    async with get_session() as s:
+        rows_db = list(
+            (await s.execute(select(ReachRow).where(ReachRow.active.is_(True)))).scalars().all()
+        )
+    if prev_map is None:  # отдельная выгрузка: последнее записанное == текущее в БД
+        prev_map = {r.url: r.views for r in rows_db}
+
+    def flag(r) -> str:
+        if r.manual:
+            return "✍️ вручную"
+        if r.first_seen and (now - r.first_seen).days >= freeze_days:
+            return f"🏁 финал ({freeze_days}д)"
+        if r.views is None:
+            return "⏳ ждём охват"
+        if r.last_error:  # есть прошлое значение, но обновить не смогли
+            return "⚠️ не обновилось"
+        if r.views >= 10000:
+            return "🔥 >10к"
+        return "✓"
+
+    # порядок: по дате добавления (новые внизу) — сортировку в таблице делает пользователь,
+    # бот только апсертит (см. doReachWrite_).
+    rows_db.sort(key=lambda r: (r.first_seen or now))
+    sheet_rows = [
+        {
+            "date_added": (r.first_seen + MSK).strftime("%d.%m.%Y") if r.first_seen else "",
+            "creator": r.creator or "—",
+            "platform": r.platform,
+            "url": r.url,
+            "views": r.views,
+            "updated": (r.updated_at + MSK).strftime("%d.%m %H:%M") if r.updated_at else "",
+            "flag": flag(r),
+            "prev": prev_map.get(r.url),   # для детекта ручной правки на стороне таблицы
+            "manual": bool(r.manual),
+        }
+        for r in rows_db
+    ]
+    total = sum(r.views for r in rows_db if r.views is not None)
+
+    try:
+        res = await sheets_client.reach_write(settings.reach_sheet_id, sheet_rows, total)
+    except SheetsError as e:
+        logger.warning("reach_write failed: %s", e)
+        return {"ok": False, "error": f"запись таблицы: {e}"}
+
+    # Таблица сообщила, где охват правили руками → запоминаем и больше не трогаем/не парсим.
+    newly = [u for u in (res.get("manual") or []) if u]
+    if newly:
+        async with get_session() as s:
+            for u in newly:
+                row = (await s.execute(select(ReachRow).where(ReachRow.url == u))).scalar_one_or_none()
+                if row and not row.manual:
+                    row.manual = True
+                    logger.info("reach: %s помечен как ручной — больше не парсим", u[:60])
+            await s.commit()
+    return {"ok": True, "rows": len(rows_db), "total": total, "manual_new": len(newly)}
+
+
 async def reach_run(bot) -> dict:
     """Собрать охваты по всем роликам «Сингл», обновить БД (не теряя прошлое при сбое),
     записать клиентскую таблицу, оповестить админов о сбоях. Возвращает сводку."""
@@ -387,57 +468,12 @@ async def reach_run(bot) -> dict:
                 failed.append(f"{platform}: {url[:50]} — {err}")
             await asyncio.sleep(2.0 if platform in _SLOW else 0.3)  # EnsembleData не частить
         await s.commit()
-        rows_db = [r for r in (await s.execute(select(ReachRow).where(ReachRow.active.is_(True)))).scalars().all()]
 
-    # строки для таблицы + сумма
-    def flag(r) -> str:
-        if r.manual:
-            return "✍️ вручную"
-        if r.first_seen and (now - r.first_seen).days >= freeze_days:
-            return f"🏁 финал ({freeze_days}д)"
-        if r.views is None:
-            return "⚠️ нет данных"
-        if r.last_error:  # есть прошлое значение, но обновить не смогли
-            return "⚠️ не обновилось"
-        if r.views >= 10000:
-            return "🔥 >10к"
-        return "✓"
-
-    # порядок: по дате добавления (новые внизу) — сортировку в таблице делает пользователь,
-    # бот только апсертит (см. doReachWrite_).
-    rows_db.sort(key=lambda r: (r.first_seen or now))
-    sheet_rows = [
-        {
-            "date_added": (r.first_seen + MSK).strftime("%d.%m.%Y") if r.first_seen else "",
-            "creator": r.creator or "—",
-            "platform": r.platform,
-            "url": r.url,
-            "views": r.views,
-            "updated": (r.updated_at + MSK).strftime("%d.%m %H:%M") if r.updated_at else "",
-            "flag": flag(r),
-            "prev": prev_map.get(r.url),   # для детекта ручной правки на стороне таблицы
-            "manual": bool(r.manual),
-        }
-        for r in rows_db
-    ]
-    total = sum(r.views for r in rows_db if r.views is not None)
-
-    try:
-        res = await sheets_client.reach_write(settings.reach_sheet_id, sheet_rows, total)
-    except SheetsError as e:
-        logger.warning("reach_write failed: %s", e)
-        return {"ok": False, "error": f"запись таблицы: {e}"}
-
-    # Таблица сообщила, где охват правили руками → запоминаем и больше не трогаем/не парсим.
-    newly = [u for u in (res.get("manual") or []) if u]
-    if newly:
-        async with get_session() as s:
-            for u in newly:
-                row = (await s.execute(select(ReachRow).where(ReachRow.url == u))).scalar_one_or_none()
-                if row and not row.manual:
-                    row.manual = True
-                    logger.info("reach: %s помечен как ручной — больше не парсим", u[:60])
-            await s.commit()
+    # Выгрузка в таблицу — отдельным шагом (без обращений к платным API).
+    w = await write_reach_sheet(prev_map)
+    if not w.get("ok"):
+        return {"ok": False, "error": w.get("error")}
+    total, newly = w["total"], w.get("manual_new", 0)
 
     # алерт админам о сбоях
     if failed:
@@ -451,7 +487,7 @@ async def reach_run(bot) -> dict:
             except Exception:  # noqa: BLE001
                 pass
     return {"ok": True, "links": len(link_owner), "failed": len(failed), "frozen": frozen_cnt,
-            "manual": manual_cnt + len(newly), "total": total}
+            "manual": manual_cnt + newly, "total": total}
 
 
 async def run_reach_loop(bot, interval: int = 900) -> None:

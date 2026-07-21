@@ -112,7 +112,25 @@ async def _track_links(tg_id: int, text: str) -> int:
     for u in urls:
         new, _ = await add_reach_link(u, name, tg)
         added += 1 if new else 0
+    if added:
+        _push_links_to_sheet()
     return added
+
+
+def _push_links_to_sheet() -> None:
+    """Ссылки в клиентскую таблицу СРАЗУ (в фоне) — это только Google Sheets, без
+    обращений к платным API. Охват подтянется ближайшим прогоном."""
+    async def _run():
+        try:
+            from bot.reach import write_reach_sheet
+
+            res = await write_reach_sheet()
+            if not res.get("ok"):
+                logger.warning("push links to sheet failed: %s", res.get("error"))
+        except Exception as e:  # noqa: BLE001
+            logger.warning("push links to sheet failed: %s", e)
+
+    asyncio.create_task(_run())
 
 
 @router.callback_query(F.data == "single:add_link")
