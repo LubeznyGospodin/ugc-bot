@@ -143,6 +143,9 @@ class ReachRow(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_try_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)  # ссылка ещё есть в «Отклики»
+    # Охват вписан руками в таблице → бот больше НЕ парсит и НЕ перезаписывает эту строку
+    # (и не тратит на неё юниты API). Ставится по ответу doReachWrite_.
+    manual: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class AppState(Base):

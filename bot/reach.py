@@ -146,7 +146,9 @@ def fetch_instagram(url: str) -> tuple[int | None, str | None]:
         d = _ed_get("/instagram/post/details", {"code": code})
         data = d.get("data")
         if not isinstance(data, dict):
-            return None, "рилс недоступен (удалён/скрыт)"
+            # НЕ утверждаем «удалён»: чаще это приватный аккаунт, лимит API или сбой
+            # индекса. Прошлое значение сохраняем, строку помечаем ⚠️.
+            return None, "API не вернул данные (приватный аккаунт / лимит / сбой)"
         pc = data.get("video_play_count") or data.get("video_view_count") or 0
         return int(pc), None
     except Exception as e:  # noqa: BLE001
@@ -168,9 +170,59 @@ def fetch_tiktok(url: str) -> tuple[int | None, str | None]:
         return None, f"tiktok: {e}"
 
 
-def fetch_unsupported(url: str) -> tuple[int | None, str | None]:
-    """Threads/Facebook — авто-источник пока не подключён, помечаем на ручной ввод."""
-    return None, "площадка пока вручную (Threads/FB)"
+def _threads_shortcode(url: str) -> str | None:
+    m = re.search(r"threads\.(?:com|net)/@[^/]+/post/([A-Za-z0-9_-]+)", url)
+    return m.group(1) if m else None
+
+
+def _find_views(obj, _depth: int = 0):
+    """Рекурсивно ищем в ответе поле с числом просмотров. Threads/Meta меняют схему,
+    поэтому не привязываемся к одному пути: берём первый ключ вида *view*/*play* с int."""
+    if _depth > 6:
+        return None
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            kl = k.lower()
+            if isinstance(v, int) and ("view" in kl or "play" in kl) and "disabled" not in kl:
+                return v
+        for v in obj.values():
+            got = _find_views(v, _depth + 1)
+            if got is not None:
+                return got
+    elif isinstance(obj, list):
+        for v in obj[:5]:
+            got = _find_views(v, _depth + 1)
+            if got is not None:
+                return got
+    return None
+
+
+def fetch_threads(url: str) -> tuple[int | None, str | None]:
+    """Threads через EnsembleData (/threads/post/replies, можно по shortcode).
+    ВНИМАНИЕ: в документированном ответе поля просмотров нет — ищем его защитно.
+    Не нашли → честная ошибка, строка остаётся под ручной ввод."""
+    code = _threads_shortcode(url)
+    if not code:
+        return None, "не распознал threads shortcode"
+    if not settings.ensembledata_token:
+        return None, "нет ENSEMBLEDATA_TOKEN"
+    try:
+        d = _ed_get("/threads/post/replies", {"id": 1, "shortcode": code})
+        data = d.get("data")
+        if not data:
+            return None, "пост не найден в API"
+        views = _find_views(data)
+        if views is None:
+            return None, "API не отдаёт просмотры — впиши вручную"
+        return int(views), None
+    except Exception as e:  # noqa: BLE001
+        return None, f"threads: {e}"
+
+
+def fetch_facebook(url: str) -> tuple[int | None, str | None]:
+    """Facebook: авто-источника нет. EnsembleData FB не поддерживает, а публичные
+    share-ссылки отдают 400 без сессии. Только ручной ввод (он не перезатирается)."""
+    return None, "FB только вручную (авто-источника нет)"
 
 
 def fetch_telegram(url: str) -> tuple[int | None, str | None]:
@@ -212,8 +264,8 @@ _FETCHERS = {
     "instagram": fetch_instagram,
     "tiktok": fetch_tiktok,
     "telegram": fetch_telegram,
-    "threads": fetch_unsupported,
-    "facebook": fetch_unsupported,
+    "threads": fetch_threads,
+    "facebook": fetch_facebook,
 }
 # Площадки через EnsembleData — им нужна пауза побольше (их IG/TikTok-бэкенд рейт-лимитит).
 _SLOW = {"instagram", "tiktok"}
@@ -294,6 +346,8 @@ async def reach_run(bot) -> dict:
     freeze_days = settings.reach_freeze_days
     failed: list[str] = []
     frozen_cnt = 0
+    manual_cnt = 0
+    prev_map: dict[str, int | None] = {}  # что бот писал в таблицу в ПРОШЛЫЙ раз
     async with get_session() as s:
         existing = {r.url: r for r in (await s.execute(select(ReachRow))).scalars().all()}
         for r in existing.values():
@@ -307,6 +361,12 @@ async def reach_run(bot) -> dict:
             if row.first_seen is None:
                 row.first_seen = now
             row.creator, row.telegram, row.active = creator, tg, True
+            # Снимаем ДО фетча: с этим таблица сверит ячейку и поймёт ручную правку.
+            prev_map[url] = row.views
+            # Ручной ввод — не парсим совсем (экономим юниты) и не перезаписываем.
+            if row.manual:
+                manual_cnt += 1
+                continue
             # Заморозка: ролик старше N дней не парсим (экономим юниты), значение остаётся.
             if (now - row.first_seen).days >= freeze_days:
                 frozen_cnt += 1
@@ -324,6 +384,8 @@ async def reach_run(bot) -> dict:
 
     # строки для таблицы + сумма
     def flag(r) -> str:
+        if r.manual:
+            return "✍️ вручную"
         if r.first_seen and (now - r.first_seen).days >= freeze_days:
             return f"🏁 финал ({freeze_days}д)"
         if r.views is None:
@@ -346,16 +408,29 @@ async def reach_run(bot) -> dict:
             "views": r.views,
             "updated": (r.updated_at + MSK).strftime("%d.%m %H:%M") if r.updated_at else "",
             "flag": flag(r),
+            "prev": prev_map.get(r.url),   # для детекта ручной правки на стороне таблицы
+            "manual": bool(r.manual),
         }
         for r in rows_db
     ]
     total = sum(r.views for r in rows_db if r.views is not None)
 
     try:
-        await sheets_client.reach_write(settings.reach_sheet_id, sheet_rows, total)
+        res = await sheets_client.reach_write(settings.reach_sheet_id, sheet_rows, total)
     except SheetsError as e:
         logger.warning("reach_write failed: %s", e)
         return {"ok": False, "error": f"запись таблицы: {e}"}
+
+    # Таблица сообщила, где охват правили руками → запоминаем и больше не трогаем/не парсим.
+    newly = [u for u in (res.get("manual") or []) if u]
+    if newly:
+        async with get_session() as s:
+            for u in newly:
+                row = (await s.execute(select(ReachRow).where(ReachRow.url == u))).scalar_one_or_none()
+                if row and not row.manual:
+                    row.manual = True
+                    logger.info("reach: %s помечен как ручной — больше не парсим", u[:60])
+            await s.commit()
 
     # алерт админам о сбоях
     if failed:
@@ -368,7 +443,8 @@ async def reach_run(bot) -> dict:
                 await bot.send_message(admin_id, head + body)
             except Exception:  # noqa: BLE001
                 pass
-    return {"ok": True, "links": len(link_owner), "failed": len(failed), "frozen": frozen_cnt, "total": total}
+    return {"ok": True, "links": len(link_owner), "failed": len(failed), "frozen": frozen_cnt,
+            "manual": manual_cnt + len(newly), "total": total}
 
 
 async def run_reach_loop(bot, interval: int = 900) -> None:

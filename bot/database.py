@@ -48,6 +48,8 @@ async def init_db() -> None:
     await _add_column_if_missing("cached_applications", "video", "TEXT")
     # Дата первого сбора охвата — для заморозки старых роликов.
     await _add_column_if_missing("reach_rows", "first_seen", "TIMESTAMP")
+    # Охват вписан руками в таблице → не парсим и не перезаписываем.
+    await _add_column_if_missing("reach_rows", "manual", "BOOLEAN DEFAULT FALSE")
 
 
 async def _add_column_if_missing(table: str, column: str, coltype: str) -> None:
