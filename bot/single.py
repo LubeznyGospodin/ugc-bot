@@ -23,7 +23,7 @@ from sqlalchemy import select
 from bot.config import settings
 from bot.database import get_session
 from bot.keyboards import single_accept_keyboard, single_submit_keyboard
-from bot.models import AppState, CachedApplication, SinglePipeline
+from bot.models import AppState, CachedApplication, ReachRow, SinglePipeline
 
 logger = logging.getLogger(__name__)
 
@@ -247,12 +247,29 @@ async def funnel() -> dict[str, int]:
         if (a.video or "").strip():
             d["video"] = True
     v = list(by_chat.values())
+
+    # Просрочки и охваты берём из пайплайна и трекинга охватов (единый проект «Сингл»).
+    today_msk = (datetime.utcnow() + MSK).date()
+    async with get_session() as s:
+        pipelines = (await s.execute(select(SinglePipeline))).scalars().all()
+        reach = (await s.execute(select(ReachRow).where(ReachRow.active.is_(True)))).scalars().all()
+    # Просрочка: срок задан, прошёл, а ролик ещё не сдан (stage != submitted).
+    overdue = sum(
+        1 for p in pipelines
+        if p.deadline and p.deadline < today_msk and p.stage != "submitted"
+    )
+    reach_vals = [r.views for r in reach if r.views is not None]
     return {
         "otkliki": len(v),
         "offers": sum(1 for d in v if d["offer"]),
         "accepted": sum(1 for d in v if d["confirmed"]),
         "producing": sum(1 for d in v if d["confirmed"] and not d["video"]),
         "submitted": sum(1 for d in v if d["video"]),
+        "overdue": overdue,
+        "reach_total": sum(reach_vals),
+        "reach_rows": len(reach),           # всего роликов в трекинге
+        "reach_measured": len(reach_vals),  # по скольким есть цифра охвата
+        "reach_10k": sum(1 for x in reach_vals if x >= 10000),
     }
 
 
@@ -333,15 +350,44 @@ async def my_projects_view(chat_id: int, is_admin: bool = False):
     return text, (InlineKeyboardMarkup(inline_keyboard=rows) if rows else None)
 
 
+def _pct(part: int, whole: int) -> str:
+    """Конверсия part/whole в % (─ если делить не на что)."""
+    return f"{round(part / whole * 100)}%" if whole else "—"
+
+
+def _fmt_int(n: int) -> str:
+    """1234567 → 1 234 567 (неразрывный пробел для читаемости в TG)."""
+    return f"{n:,}".replace(",", " ")
+
+
 def funnel_text(f: dict[str, int]) -> str:
-    return (
-        "📊 <b>Воронка «Сингл»</b>\n\n"
-        f"📨 Откликов: <b>{f['otkliki']}</b>\n"
-        f"🎉 Офферов: <b>{f['offers']}</b>\n"
-        f"🤝 Приняли оффер: <b>{f['accepted']}</b>\n"
-        f"🎬 Делают ролик: <b>{f['producing']}</b>\n"
-        f"✅ Сделали ролик: <b>{f['submitted']}</b>"
-    )
+    offers = f["offers"]
+    accepted = f["accepted"]
+    submitted = f["submitted"]
+    lines = [
+        "📊 <b>Воронка «Сингл»</b>\n",
+        # После авто-оффера отклик == оффер, поэтому верхняя точка — «В проекте (оффер)».
+        f"🎉 В проекте (оффер): <b>{offers}</b>",
+        f"🤝 Приняли участие: <b>{accepted}</b> <i>({_pct(accepted, offers)} от офферов)</i>",
+        f"🎬 Делают ролик: <b>{f['producing']}</b>"
+        + (f" · ⏰ просрочка: <b>{f['overdue']}</b>" if f.get("overdue") else ""),
+        f"✅ Сдали ролик: <b>{submitted}</b> <i>({_pct(submitted, accepted)} от принявших)</i>",
+        f"\n📈 Дошли до ролика: <b>{_pct(submitted, offers)}</b> <i>(оффер → сдал)</i>",
+    ]
+
+    # Блок охватов (из трекинга роликов проекта).
+    rows = f.get("reach_rows", 0)
+    if rows:
+        measured = f.get("reach_measured", 0)
+        pending = rows - measured
+        lines.append(
+            f"\n👁 <b>Охваты роликов</b>\n"
+            f"Суммарно: <b>{_fmt_int(f['reach_total'])}</b>\n"
+            f"Роликов в трекинге: <b>{rows}</b>"
+            + (f" <i>(ждём данные по {pending})</i>" if pending else "")
+            + f"\n🔥 ≥10к: <b>{f['reach_10k']}</b>"
+        )
+    return "\n".join(lines)
 
 
 # ── Фоновый луп: напоминания креатору + утренний отчёт админам ────────────────
