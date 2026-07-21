@@ -146,6 +146,9 @@ class ReachRow(Base):
     # Охват вписан руками в таблице → бот больше НЕ парсит и НЕ перезаписывает эту строку
     # (и не тратит на неё юниты API). Ставится по ответу doReachWrite_.
     manual: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Ссылка добавлена ЧЕРЕЗ БОТА («➕ Добавить ещё ссылку» / админ), а не найдена в листе
+    # «Отклики». Такие строки reach_run НЕ гасит — иначе они выпадали из клиентской таблицы.
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class AppState(Base):

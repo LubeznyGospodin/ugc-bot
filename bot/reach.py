@@ -304,10 +304,11 @@ async def add_reach_link(url: str, creator: str, telegram: str = "") -> tuple[bo
         row = (await s.execute(select(ReachRow).where(ReachRow.url == url))).scalar_one_or_none()
         if row is not None:
             row.active = True  # уже есть — не дублируем, не сбрасываем дату
+            row.pinned = True  # пришла через бота → reach_run её не погасит
             await s.commit()
             return False, platform
         s.add(ReachRow(url=url, creator=creator, telegram=telegram, platform=platform,
-                       first_seen=datetime.utcnow(), active=True))
+                       first_seen=datetime.utcnow(), active=True, pinned=True))
         await s.commit()
     return True, platform
 
@@ -350,6 +351,12 @@ async def reach_run(bot) -> dict:
     prev_map: dict[str, int | None] = {}  # что бот писал в таблицу в ПРОШЛЫЙ раз
     async with get_session() as s:
         existing = {r.url: r for r in (await s.execute(select(ReachRow))).scalars().all()}
+        # Ссылки, добавленные ЧЕРЕЗ БОТА («➕ Добавить ещё ссылку» / админ), в листе
+        # «Отклики» не появляются. Добавляем их к списку из листа, иначе гашение ниже
+        # выкидывало бы их из клиентской таблицы.
+        for r in existing.values():
+            if r.pinned and r.url not in link_owner:
+                link_owner[r.url] = (r.creator or "", r.telegram or "")
         for r in existing.values():
             r.active = False  # отметим ушедшие; активные включим ниже
         for url, (creator, tg) in link_owner.items():

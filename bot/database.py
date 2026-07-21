@@ -50,6 +50,8 @@ async def init_db() -> None:
     await _add_column_if_missing("reach_rows", "first_seen", "TIMESTAMP")
     # Охват вписан руками в таблице → не парсим и не перезаписываем.
     await _add_column_if_missing("reach_rows", "manual", "BOOLEAN DEFAULT FALSE")
+    # Ссылка добавлена через бота (не из листа «Отклики») → reach_run её не гасит.
+    await _add_column_if_missing("reach_rows", "pinned", "BOOLEAN DEFAULT FALSE")
 
 
 async def _add_column_if_missing(table: str, column: str, coltype: str) -> None:
