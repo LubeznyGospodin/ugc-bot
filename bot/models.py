@@ -191,3 +191,23 @@ class FSMRecord(Base):
     state: Mapped[str | None] = mapped_column(String(255), nullable=True)
     data: Mapped[str] = mapped_column(Text, default="{}")  # JSON
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class CreatorWork(Base):
+    """Лучшие работы креатора — для карточки в канале @ugc_creatory и подборок.
+
+    Источник (source):
+      self  — креатор прислал сам в бота (файл уже в Telegram, готов к репосту)
+      admin — добавил админ
+      ig    — собрано ночным браузерным обходом Instagram (файл скачан отдельно)
+    Храним file_id (если файл в Telegram) и/или ссылку на оригинал."""
+
+    __tablename__ = "creator_works"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tg_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    file_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(16), default="self")
+    position: Mapped[int] = mapped_column(Integer, default=0)  # порядок в карточке
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

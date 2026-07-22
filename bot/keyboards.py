@@ -70,6 +70,16 @@ def profile_edit_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="✏️ Обновить данные", callback_data="profile:edit")],
+            [InlineKeyboardButton(text="🎬 Мои лучшие работы", callback_data="works:add")],
+        ]
+    )
+
+
+def works_offer_keyboard() -> InlineKeyboardMarkup:
+    """Предложение прислать работы — сразу после регистрации."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🎬 Прислать лучшие работы", callback_data="works:add")],
         ]
     )
 

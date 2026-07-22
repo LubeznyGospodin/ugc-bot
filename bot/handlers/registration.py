@@ -410,6 +410,15 @@ async def submit(call: CallbackQuery, state: FSMContext, bot: Bot):
         "🎉 Готово! Анкета сохранена. Мы на связи, если появятся подходящие проекты.",
         reply_markup=profile_edit_keyboard(),
     )
+    # Сразу зовём прислать лучшие работы — материал для карточки в базе креаторов.
+    from bot.keyboards import works_offer_keyboard
+
+    await bot.send_message(
+        chat_id,
+        "🎬 Последний штрих: пришли <b>до 4 своих лучших роликов</b> — "
+        "их увидят бренды в нашей базе креаторов.\n\nЧем сильнее работы, тем чаще зовут на проекты 🚀",
+        reply_markup=works_offer_keyboard(),
+    )
 
 
 async def _send_media_group(bot: Bot, admin_id: int, media_cls, ids: list[str]) -> None:

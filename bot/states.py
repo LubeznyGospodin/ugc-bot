@@ -56,3 +56,9 @@ class AddVideoFSM(StatesGroup):
 
     waiting_name = State()
     waiting_link = State()
+
+
+class Works(StatesGroup):
+    """Сбор лучших работ креатора (ролики для карточки в базе)."""
+
+    collecting = State()

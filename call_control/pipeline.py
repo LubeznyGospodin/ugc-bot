@@ -110,7 +110,14 @@ def save_state(state):
 
 _users = {}
 
+# В Битриксе сотрудник может сидеть под чужой учёткой — здесь реальные имена.
+# 10168 «Юлия Гурьева» — на самом деле Динар (мужчина).
+NAME_OVERRIDES = {"10168": "Динар"}
+
 def user_name(uid):
+    uid = str(uid)
+    if uid in NAME_OVERRIDES:
+        return NAME_OVERRIDES[uid]
     if uid not in _users:
         try:
             u = b24("user.get", {"ID": uid})["result"][0]
@@ -189,6 +196,10 @@ def analyze(transcript, meta):
         f"Направление: {'исходящий' if meta['type'] == '1' else 'входящий'}\n\n"
         f"ТРАНСКРИБАЦИЯ:\n{transcript}"
     )
+    return run_claude(payload)
+
+
+def run_claude(payload):
     # чистое окружение: без переменных вложенной Claude-сессии, с headless-токеном
     env = {
         "HOME": os.path.expanduser("~"),
@@ -212,11 +223,32 @@ def send_digest_if_due(state):
     if now.hour < DIGEST_HOUR or state.get("digest_sent") == today:
         return
     missed = state["missed"].get(today, {})
+    missed_lines = ""
     if missed:
-        lines = [f"📵 Недозвоны за {now:%d.%m} (звонки < {MIN_DURATION} сек):"]
+        lines = [f"📵 Недозвоны (< {MIN_DURATION} сек):"]
         for uid, cnt in sorted(missed.items(), key=lambda x: -x[1]):
             lines.append(f"— {user_name(uid)}: {cnt}")
-        tg_send("\n".join(lines))
+        missed_lines = "\n".join(lines)
+
+    # сводный отчёт дня по всем разборам
+    day_file = os.path.join(BASE_DIR, "daily", today + ".md")
+    if os.path.exists(day_file):
+        with open(os.path.join(BASE_DIR, "prompt_daily.md")) as f:
+            prompt = f.read()
+        with open(day_file) as f:
+            reports = f.read()
+        payload = (f"{prompt}\n\nДата: {now:%d.%m.%Y}\n"
+                   f"{missed_lines or 'Недозвонов нет.'}\n\n"
+                   f"РАЗБОРЫ ЗВОНКОВ ЗА ДЕНЬ:\n\n{reports}")
+        try:
+            summary = run_claude(payload)
+            tg_send(summary)
+        except Exception as e:
+            log(f"дневной отчёт не собрался: {e}")
+            if missed_lines:
+                tg_send(missed_lines)
+    elif missed_lines:
+        tg_send(missed_lines)
     state["digest_sent"] = today
 
 
@@ -257,6 +289,16 @@ def main():
             log(f"обрабатываю {cid} ({dur} сек)")
             mp3 = download_record(c["RECORD_FILE_ID"], cid)
             transcript = transcribe(mp3)
+            # пустой/крошечный транскрипт = гудки, автоответчик, тишина — это недозвон
+            if len(transcript.split()) < 12:
+                log(f"пустой транскрипт ({len(transcript)} симв.) — считаю недозвоном: {cid}")
+                day = c["CALL_START_DATE"][:10]
+                state["missed"].setdefault(day, {})
+                state["missed"][day][manager_id] = state["missed"][day].get(manager_id, 0) + 1
+                state["processed"][cid] = datetime.now().isoformat()
+                save_state(state)
+                os.remove(mp3)
+                continue
             act_id = c.get("CRM_ACTIVITY_ID")
             title, url = deal_info(act_id) if act_id and str(act_id) != "0" else ("", "")
             start_dt = datetime.fromisoformat(c["CALL_START_DATE"])
@@ -271,6 +313,11 @@ def main():
             if url:
                 report += f"\n\n🔗 {url}"
             tg_send(report)
+            # копим разборы дня для вечернего сводного отчёта
+            day_file = os.path.join(BASE_DIR, "daily", c["CALL_START_DATE"][:10] + ".md")
+            os.makedirs(os.path.dirname(day_file), exist_ok=True)
+            with open(day_file, "a") as f:
+                f.write(report + "\n\n=====\n\n")
             state["processed"][cid] = datetime.now().isoformat()
             save_state(state)
             os.remove(mp3)
