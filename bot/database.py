@@ -52,6 +52,8 @@ async def init_db() -> None:
     await _add_column_if_missing("reach_rows", "manual", "BOOLEAN DEFAULT FALSE")
     # Ссылка добавлена через бота (не из листа «Отклики») → reach_run её не гасит.
     await _add_column_if_missing("reach_rows", "pinned", "BOOLEAN DEFAULT FALSE")
+    # Лайки — приходят тем же запросом, что и охват (доп. юнитов не тратим).
+    await _add_column_if_missing("reach_rows", "likes", "INTEGER")
 
 
 async def _add_column_if_missing(table: str, column: str, coltype: str) -> None:
