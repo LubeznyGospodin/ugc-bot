@@ -8,6 +8,7 @@ import asyncio
 import logging
 
 from aiogram import Bot, F, Router
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -24,6 +25,7 @@ from bot.single import (
     DONE_TEXT,
     NOT_A_LINK_TEXT,
     PAYMENT_SAVED_TEXT,
+    _participates_single,
     get_pipeline,
     mark_accepted,
     parse_deadline,
@@ -97,14 +99,15 @@ async def single_resume_payment(call: CallbackQuery, state: FSMContext, bot: Bot
     await bot.send_message(call.message.chat.id, ASK_PAYMENT_TEXT)
 
 
-async def _track_links(tg_id: int, text: str) -> int:
-    """Все ссылки из сообщения → в трекинг охватов. Имя креатора берём из БД. → сколько добавлено."""
+async def _track_links(tg_id: int, text: str) -> tuple[int, int]:
+    """Ссылки из сообщения → в трекинг охватов. Имя креатора берём из БД.
+    → (сколько новых, сколько всего ссылок в сообщении)."""
     from bot.reach import add_reach_link, extract_urls
     from bot.utils.db_helpers import get_creator_by_tg_id
 
     urls = extract_urls(text)
     if not urls:
-        return 0
+        return 0, 0
     creator = await get_creator_by_tg_id(tg_id)
     name = (getattr(creator, "full_name", None) if creator else None) or ""
     tg = (getattr(creator, "telegram_contact", None) if creator else None) or ""
@@ -114,7 +117,19 @@ async def _track_links(tg_id: int, text: str) -> int:
         added += 1 if new else 0
     if added:
         _push_links_to_sheet()
-    return added
+    return added, len(urls)
+
+
+def _added_text(added: int, total: int) -> str:
+    """Единый ответ на догрузку роликов — и креатору, и админу."""
+    if added == 0:
+        return ("👌 Эти ролики уже в трекинге — повторно добавлять не нужно.\n"
+                "Всё на месте, охваты обновляются автоматически.")
+    word = "ролик" if added == 1 else "ролика" if added < 5 else "роликов"
+    tail = f" (ещё {total - added} уже были в списке)" if total > added else ""
+    return (f"✅ Готово! Загрузил {added} {word}{tail}.\n\n"
+            f"Ссылки уже в таблице проекта — охваты подтянутся автоматически "
+            f"ближайшим обновлением 📊")
 
 
 def _push_links_to_sheet() -> None:
@@ -151,9 +166,28 @@ async def single_add_link(message: Message, state: FSMContext, bot: Bot):
     if "http" not in text.lower():
         await message.answer("Это не похоже на ссылку 🙈 Пришли ссылку на пост (начинается с http…).")
         return
-    n = await _track_links(message.from_user.id, text)
+    added, total = await _track_links(message.from_user.id, text)
     await state.clear()
-    await message.answer(f"✅ Добавил в трекинг: {n}. Охваты появятся в статистике при ближайшем обновлении.")
+    await message.answer(_added_text(added, total))
+
+
+# СТРАХОВКА: состояние FSM живёт в памяти и стирается при рестарте бота. Без этого
+# ссылка, присланная после перезапуска, не попадала НИ В ОДИН обработчик — молча
+# терялась. Ловим ссылку от участника «Сингл», когда никакого диалога не идёт.
+@router.message(StateFilter(None), F.text.contains("http"))
+async def single_loose_link(message: Message, bot: Bot):
+    from aiogram.dispatcher.event.bases import SkipHandler
+
+    from bot.reach import detect_platform, extract_urls
+
+    urls = extract_urls(message.text or "")
+    # только распознаваемые площадки — случайную ссылку в переписке не трогаем
+    if not urls or all(detect_platform(u) == "other" for u in urls):
+        raise SkipHandler  # пропускаем дальше по цепочке роутеров
+    if not await _participates_single(message.from_user.id):
+        raise SkipHandler
+    added, total = await _track_links(message.from_user.id, message.text or "")
+    await message.answer(_added_text(added, total))
 
 
 @router.message(SingleFSM.waiting_links)

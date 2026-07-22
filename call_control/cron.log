@@ -1,0 +1,100 @@
+[2026-07-21 18:15:09] предыдущий прогон ещё идёт — выходим
+[2026-07-21 18:00:06] звонков с 2026-07-20T18:00:05+03:00: 74
+[2026-07-21 18:00:06] обрабатываю externalCall.a0c03557bcf1b71c58ab936eb1843e3f.1784620821 (55 сек)
+[2026-07-21 18:02:34] ОШИБКА externalCall.a0c03557bcf1b71c58ab936eb1843e3f.1784620821: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_a0c03557bcf1b71c58ab936eb1843e3f_1784620821.txt'
+[2026-07-21 18:02:34] обрабатываю externalCall.77a4b26522e67f455b52714ea0e7bf1b.1784623427 (47 сек)
+[2026-07-21 18:03:41] ОШИБКА externalCall.77a4b26522e67f455b52714ea0e7bf1b.1784623427: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_77a4b26522e67f455b52714ea0e7bf1b_1784623427.txt'
+[2026-07-21 18:03:41] обрабатываю externalCall.c87d64ea96eba7933bc06fdbb7be8f1f.1784623900 (46 сек)
+[2026-07-21 18:05:00] ОШИБКА externalCall.c87d64ea96eba7933bc06fdbb7be8f1f.1784623900: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_c87d64ea96eba7933bc06fdbb7be8f1f_1784623900.txt'
+[2026-07-21 18:05:00] обрабатываю externalCall.24d03925ab9afd49719ecf6e229c8ad9.1784623967 (58 сек)
+[2026-07-21 18:06:44] ОШИБКА externalCall.24d03925ab9afd49719ecf6e229c8ad9.1784623967: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_24d03925ab9afd49719ecf6e229c8ad9_1784623967.txt'
+[2026-07-21 18:06:44] обрабатываю externalCall.b8653a9c22413ec8002a1ae3bfc6d954.1784624147 (32 сек)
+[2026-07-21 18:08:04] ОШИБКА externalCall.b8653a9c22413ec8002a1ae3bfc6d954.1784624147: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_b8653a9c22413ec8002a1ae3bfc6d954_1784624147.txt'
+[2026-07-21 18:08:04] обрабатываю externalCall.067d486cb0cddf8ceab45a68dfcdcd9f.1784625070 (31 сек)
+[2026-07-21 18:08:25] ОШИБКА externalCall.067d486cb0cddf8ceab45a68dfcdcd9f.1784625070: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_067d486cb0cddf8ceab45a68dfcdcd9f_1784625070.txt'
+[2026-07-21 18:08:25] обрабатываю externalCall.8864c547660b994f7fd2c0a7f12de901.1784625147 (405 сек)
+[2026-07-21 18:08:50] ОШИБКА externalCall.8864c547660b994f7fd2c0a7f12de901.1784625147: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_8864c547660b994f7fd2c0a7f12de901_1784625147.txt'
+[2026-07-21 18:08:50] обрабатываю externalCall.a8861a0d603968028c12bc190228e84e.1784626322 (178 сек)
+[2026-07-21 18:09:12] ОШИБКА externalCall.a8861a0d603968028c12bc190228e84e.1784626322: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_a8861a0d603968028c12bc190228e84e_1784626322.txt'
+[2026-07-21 18:09:12] обрабатываю externalCall.28fb44a785f231d76df73870023f715d.1784626533 (54 сек)
+[2026-07-21 18:09:40] ОШИБКА externalCall.28fb44a785f231d76df73870023f715d.1784626533: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_28fb44a785f231d76df73870023f715d_1784626533.txt'
+[2026-07-21 18:09:40] обрабатываю externalCall.2c79d12fafde163e25a5639a2746d2fc.1784626927 (131 сек)
+[2026-07-21 18:10:10] ОШИБКА externalCall.2c79d12fafde163e25a5639a2746d2fc.1784626927: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_2c79d12fafde163e25a5639a2746d2fc_1784626927.txt'
+[2026-07-21 18:10:10] обрабатываю externalCall.eb6161b41c21fe1b6054cb76d9e9d557.1784627649 (45 сек)
+[2026-07-21 18:10:38] ОШИБКА externalCall.eb6161b41c21fe1b6054cb76d9e9d557.1784627649: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_eb6161b41c21fe1b6054cb76d9e9d557_1784627649.txt'
+[2026-07-21 18:10:38] обрабатываю externalCall.454c51e1bb4402631442e17871a95c47.1784627769 (50 сек)
+[2026-07-21 18:11:16] ОШИБКА externalCall.454c51e1bb4402631442e17871a95c47.1784627769: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_454c51e1bb4402631442e17871a95c47_1784627769.txt'
+[2026-07-21 18:11:16] обрабатываю externalCall.40d171dd01a64cfad7b637453106df18.1784627846 (72 сек)
+[2026-07-21 18:11:28] ОШИБКА externalCall.40d171dd01a64cfad7b637453106df18.1784627846: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_40d171dd01a64cfad7b637453106df18_1784627846.txt'
+[2026-07-21 18:11:28] обрабатываю externalCall.dff8e5978906648c9cf6bccff8859647.1784628241 (31 сек)
+[2026-07-21 18:11:42] ОШИБКА externalCall.dff8e5978906648c9cf6bccff8859647.1784628241: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_dff8e5978906648c9cf6bccff8859647_1784628241.txt'
+[2026-07-21 18:11:42] обрабатываю externalCall.9e16603115010c68a506f4d7d2635075.1784628445 (33 сек)
+[2026-07-21 18:12:07] ОШИБКА externalCall.9e16603115010c68a506f4d7d2635075.1784628445: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_9e16603115010c68a506f4d7d2635075_1784628445.txt'
+[2026-07-21 18:12:07] обрабатываю externalCall.25e140418d7ffafded9c4abcf18ab701.1784634246 (58 сек)
+[2026-07-21 18:12:57] ОШИБКА externalCall.25e140418d7ffafded9c4abcf18ab701.1784634246: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_25e140418d7ffafded9c4abcf18ab701_1784634246.txt'
+[2026-07-21 18:12:57] обрабатываю externalCall.040f33b5d088e1aca2a2d30eb564965f.1784636707 (79 сек)
+[2026-07-21 18:14:36] ОШИБКА externalCall.040f33b5d088e1aca2a2d30eb564965f.1784636707: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_040f33b5d088e1aca2a2d30eb564965f_1784636707.txt'
+[2026-07-21 18:14:37] обрабатываю externalCall.e1cfa60f7347477aea0869fb57460617.1784642544 (33 сек)
+[2026-07-21 18:17:25] ОШИБКА externalCall.e1cfa60f7347477aea0869fb57460617.1784642544: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_e1cfa60f7347477aea0869fb57460617_1784642544.txt'
+[2026-07-21 18:17:25] обрабатываю externalCall.d9978b3c379c10a662ee9b0a6166bd9e.1784643662 (89 сек)
+[2026-07-21 18:18:30] ОШИБКА externalCall.d9978b3c379c10a662ee9b0a6166bd9e.1784643662: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_d9978b3c379c10a662ee9b0a6166bd9e_1784643662.txt'
+[2026-07-21 18:18:30] обрабатываю externalCall.50bfb91c6795fbae6542a1d737b0bc2e.1784645789 (52 сек)
+[2026-07-21 18:18:58] ОШИБКА externalCall.50bfb91c6795fbae6542a1d737b0bc2e.1784645789: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_50bfb91c6795fbae6542a1d737b0bc2e_1784645789.txt'
+[2026-07-21 18:30:02] звонков с 2026-07-20T18:30:01+03:00: 74
+[2026-07-21 18:30:02] обрабатываю externalCall.a0c03557bcf1b71c58ab936eb1843e3f.1784620821 (55 сек)
+[2026-07-21 18:30:13] ОШИБКА externalCall.a0c03557bcf1b71c58ab936eb1843e3f.1784620821: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_a0c03557bcf1b71c58ab936eb1843e3f_1784620821.txt'
+[2026-07-21 18:30:13] обрабатываю externalCall.77a4b26522e67f455b52714ea0e7bf1b.1784623427 (47 сек)
+[2026-07-21 18:30:23] ОШИБКА externalCall.77a4b26522e67f455b52714ea0e7bf1b.1784623427: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_77a4b26522e67f455b52714ea0e7bf1b_1784623427.txt'
+[2026-07-21 18:30:23] обрабатываю externalCall.c87d64ea96eba7933bc06fdbb7be8f1f.1784623900 (46 сек)
+[2026-07-21 18:30:32] ОШИБКА externalCall.c87d64ea96eba7933bc06fdbb7be8f1f.1784623900: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_c87d64ea96eba7933bc06fdbb7be8f1f_1784623900.txt'
+[2026-07-21 18:30:32] обрабатываю externalCall.24d03925ab9afd49719ecf6e229c8ad9.1784623967 (58 сек)
+[2026-07-21 18:30:41] ОШИБКА externalCall.24d03925ab9afd49719ecf6e229c8ad9.1784623967: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_24d03925ab9afd49719ecf6e229c8ad9_1784623967.txt'
+[2026-07-21 18:30:41] обрабатываю externalCall.b8653a9c22413ec8002a1ae3bfc6d954.1784624147 (32 сек)
+[2026-07-21 18:30:50] ОШИБКА externalCall.b8653a9c22413ec8002a1ae3bfc6d954.1784624147: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_b8653a9c22413ec8002a1ae3bfc6d954_1784624147.txt'
+[2026-07-21 18:30:50] обрабатываю externalCall.067d486cb0cddf8ceab45a68dfcdcd9f.1784625070 (31 сек)
+[2026-07-21 18:30:58] ОШИБКА externalCall.067d486cb0cddf8ceab45a68dfcdcd9f.1784625070: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_067d486cb0cddf8ceab45a68dfcdcd9f_1784625070.txt'
+[2026-07-21 18:30:58] обрабатываю externalCall.8864c547660b994f7fd2c0a7f12de901.1784625147 (405 сек)
+[2026-07-21 18:31:08] ОШИБКА externalCall.8864c547660b994f7fd2c0a7f12de901.1784625147: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_8864c547660b994f7fd2c0a7f12de901_1784625147.txt'
+[2026-07-21 18:31:08] обрабатываю externalCall.a8861a0d603968028c12bc190228e84e.1784626322 (178 сек)
+[2026-07-21 18:31:17] ОШИБКА externalCall.a8861a0d603968028c12bc190228e84e.1784626322: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_a8861a0d603968028c12bc190228e84e_1784626322.txt'
+[2026-07-21 18:31:17] обрабатываю externalCall.28fb44a785f231d76df73870023f715d.1784626533 (54 сек)
+[2026-07-21 18:31:26] ОШИБКА externalCall.28fb44a785f231d76df73870023f715d.1784626533: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_28fb44a785f231d76df73870023f715d_1784626533.txt'
+[2026-07-21 18:31:26] обрабатываю externalCall.2c79d12fafde163e25a5639a2746d2fc.1784626927 (131 сек)
+[2026-07-21 18:31:35] ОШИБКА externalCall.2c79d12fafde163e25a5639a2746d2fc.1784626927: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_2c79d12fafde163e25a5639a2746d2fc_1784626927.txt'
+[2026-07-21 18:31:35] обрабатываю externalCall.eb6161b41c21fe1b6054cb76d9e9d557.1784627649 (45 сек)
+[2026-07-21 18:31:45] ОШИБКА externalCall.eb6161b41c21fe1b6054cb76d9e9d557.1784627649: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_eb6161b41c21fe1b6054cb76d9e9d557_1784627649.txt'
+[2026-07-21 18:31:45] обрабатываю externalCall.454c51e1bb4402631442e17871a95c47.1784627769 (50 сек)
+[2026-07-21 18:31:53] ОШИБКА externalCall.454c51e1bb4402631442e17871a95c47.1784627769: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_454c51e1bb4402631442e17871a95c47_1784627769.txt'
+[2026-07-21 18:31:53] обрабатываю externalCall.40d171dd01a64cfad7b637453106df18.1784627846 (72 сек)
+[2026-07-21 18:32:02] ОШИБКА externalCall.40d171dd01a64cfad7b637453106df18.1784627846: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_40d171dd01a64cfad7b637453106df18_1784627846.txt'
+[2026-07-21 18:32:02] обрабатываю externalCall.dff8e5978906648c9cf6bccff8859647.1784628241 (31 сек)
+[2026-07-21 18:32:10] ОШИБКА externalCall.dff8e5978906648c9cf6bccff8859647.1784628241: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_dff8e5978906648c9cf6bccff8859647_1784628241.txt'
+[2026-07-21 18:32:10] обрабатываю externalCall.9e16603115010c68a506f4d7d2635075.1784628445 (33 сек)
+[2026-07-21 18:32:18] ОШИБКА externalCall.9e16603115010c68a506f4d7d2635075.1784628445: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_9e16603115010c68a506f4d7d2635075_1784628445.txt'
+[2026-07-21 18:32:18] обрабатываю externalCall.25e140418d7ffafded9c4abcf18ab701.1784634246 (58 сек)
+[2026-07-21 18:32:27] ОШИБКА externalCall.25e140418d7ffafded9c4abcf18ab701.1784634246: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_25e140418d7ffafded9c4abcf18ab701_1784634246.txt'
+[2026-07-21 18:32:27] обрабатываю externalCall.040f33b5d088e1aca2a2d30eb564965f.1784636707 (79 сек)
+[2026-07-21 18:32:37] ОШИБКА externalCall.040f33b5d088e1aca2a2d30eb564965f.1784636707: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_040f33b5d088e1aca2a2d30eb564965f_1784636707.txt'
+[2026-07-21 18:32:37] обрабатываю externalCall.e1cfa60f7347477aea0869fb57460617.1784642544 (33 сек)
+[2026-07-21 18:32:48] ОШИБКА externalCall.e1cfa60f7347477aea0869fb57460617.1784642544: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_e1cfa60f7347477aea0869fb57460617_1784642544.txt'
+[2026-07-21 18:32:48] обрабатываю externalCall.d9978b3c379c10a662ee9b0a6166bd9e.1784643662 (89 сек)
+[2026-07-21 18:33:06] ОШИБКА externalCall.d9978b3c379c10a662ee9b0a6166bd9e.1784643662: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_d9978b3c379c10a662ee9b0a6166bd9e_1784643662.txt'
+[2026-07-21 18:33:06] обрабатываю externalCall.50bfb91c6795fbae6542a1d737b0bc2e.1784645789 (52 сек)
+[2026-07-21 18:33:21] ОШИБКА externalCall.50bfb91c6795fbae6542a1d737b0bc2e.1784645789: [Errno 2] No such file or directory: '/Users/nastasyapopova/Desktop/ugc_bot_v2/call_control/records/externalCall_50bfb91c6795fbae6542a1d737b0bc2e_1784645789.txt'
+[2026-07-21 19:00:01] предыдущий прогон ещё идёт — выходим
+[2026-07-21 19:15:01] предыдущий прогон ещё идёт — выходим
+[2026-07-21 19:30:03] предыдущий прогон ещё идёт — выходим
+[2026-07-21 19:45:01] предыдущий прогон ещё идёт — выходим
+[2026-07-21 20:00:01] предыдущий прогон ещё идёт — выходим
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+[2026-07-21 20:15:01] предыдущий прогон ещё идёт — выходим
+[2026-07-21 20:30:01] предыдущий прогон ещё идёт — выходим
+[2026-07-21 20:45:01] звонков с 2026-07-20T20:45:01+03:00: 74
+[2026-07-21 21:00:01] звонков с 2026-07-20T21:00:01+03:00: 74
+[2026-07-21 21:15:01] звонков с 2026-07-20T21:15:01+03:00: 74
+[2026-07-21 21:30:01] звонков с 2026-07-20T21:30:01+03:00: 74
+[2026-07-21 21:45:01] звонков с 2026-07-20T21:45:01+03:00: 74
+[2026-07-22 09:00:03] звонков с 2026-07-21T09:00:01+03:00: 74
+[2026-07-22 09:15:02] звонков с 2026-07-21T09:15:01+03:00: 74
+[2026-07-22 09:30:01] звонков с 2026-07-21T09:30:00+03:00: 74
