@@ -51,7 +51,17 @@ async def main() -> None:
         logger.warning("grandfather_nudges failed: %s", e)
 
     bot = Bot(token=settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    dp = Dispatcher(storage=MemoryStorage())
+    # FSM в Postgres, а не в памяти: диалог (анкета, догрузка ссылок) переживает деплой.
+    # Если БД почему-то недоступна — не падаем, откатываемся на память.
+    try:
+        from bot.fsm_storage import PostgresStorage
+
+        storage = PostgresStorage()
+        logger.info("FSM storage: Postgres")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("FSM storage: откат на память (%s)", e)
+        storage = MemoryStorage()
+    dp = Dispatcher(storage=storage)
     dp.include_router(root_router)
 
     # Фоновая синхронизация таблица → БД (бренды и т.д.) — чтения из БД мгновенны.

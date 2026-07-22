@@ -176,3 +176,18 @@ class CachedApplication(Base):
     confirmed: Mapped[str | None] = mapped_column(String(16), nullable=True)  # «Подтвердил участие»
     video: Mapped[str | None] = mapped_column(Text, nullable=True)  # «Ссылка на ролик»
     synced_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class FSMRecord(Base):
+    """Состояние диалога (FSM) — в БД, а не в памяти процесса.
+
+    Зачем: MemoryStorage терял всё при каждом рестарте/деплое, из-за чего у человека
+    посреди анкеты или догрузки ссылки «пропадал» шаг и сообщение улетало в никуда.
+    Ключ собирается из StorageKey (бот+чат+юзер+тема+destiny)."""
+
+    __tablename__ = "fsm_records"
+
+    key: Mapped[str] = mapped_column(String(160), primary_key=True)
+    state: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    data: Mapped[str] = mapped_column(Text, default="{}")  # JSON
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
