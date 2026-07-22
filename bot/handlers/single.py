@@ -120,16 +120,45 @@ async def _track_links(tg_id: int, text: str) -> tuple[int, int]:
     return added, len(urls)
 
 
+def _n_roliki(n: int) -> str:
+    if n % 10 == 1 and n % 100 != 11:
+        return f"{n} ролик"
+    if n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14):
+        return f"{n} ролика"
+    return f"{n} роликов"
+
+
 def _added_text(added: int, total: int) -> str:
-    """Единый ответ на догрузку роликов — и креатору, и админу."""
+    """Ответ АДМИНУ на догрузку роликов (можно упоминать таблицу)."""
     if added == 0:
         return ("👌 Эти ролики уже в трекинге — повторно добавлять не нужно.\n"
                 "Всё на месте, охваты обновляются автоматически.")
-    word = "ролик" if added == 1 else "ролика" if added < 5 else "роликов"
     tail = f" (ещё {total - added} уже были в списке)" if total > added else ""
-    return (f"✅ Готово! Загрузил {added} {word}{tail}.\n\n"
+    return (f"✅ Готово! Загрузил {_n_roliki(added)}{tail}.\n\n"
             f"Ссылки уже в таблице проекта — охваты подтянутся автоматически "
             f"ближайшим обновлением 📊")
+
+
+def _added_text_creator(added: int, total: int, ref_link: str) -> str:
+    """Ответ КРЕАТОРУ: без внутренней кухни (таблиц/прогонов) + призыв снимать ещё
+    и звать друзей по реферальной ссылке (в метке зашит его tg_id)."""
+    if added == 0:
+        return ("👌 Эти ролики уже у меня — повторно присылать не нужно.\n"
+                "Слежу за охватами 📊")
+    tail = f" (ещё {total - added} уже были)" if total > added else ""
+    return (
+        f"✅ Готово! Загрузил {_n_roliki(added)}{tail} — буду следить за охватами 📊\n\n"
+        f"Снимай ещё, у тебя классно получается 🔥\n\n"
+        f"И зови друзей по своей ссылке:\n{ref_link}\n\n"
+        f"Чем больше креаторов приходит от тебя, тем выше твой приоритет на проектах 🚀"
+    )
+
+
+async def _ref_link(bot: Bot, tg_id: int) -> str:
+    """Персональная реферальная ссылка креатора. Метка ref<id> попадает в трекинг
+    источников (см. record_visit/source_stats) — видно, кто кого привёл."""
+    me = await bot.me()
+    return f"https://t.me/{me.username}?start=ref{tg_id}"
 
 
 def _push_links_to_sheet() -> None:
@@ -168,7 +197,10 @@ async def single_add_link(message: Message, state: FSMContext, bot: Bot):
         return
     added, total = await _track_links(message.from_user.id, text)
     await state.clear()
-    await message.answer(_added_text(added, total))
+    await message.answer(
+        _added_text_creator(added, total, await _ref_link(bot, message.from_user.id)),
+        disable_web_page_preview=True,
+    )
 
 
 # СТРАХОВКА: состояние FSM живёт в памяти и стирается при рестарте бота. Без этого
@@ -187,7 +219,10 @@ async def single_loose_link(message: Message, bot: Bot):
     if not await _participates_single(message.from_user.id):
         raise SkipHandler
     added, total = await _track_links(message.from_user.id, message.text or "")
-    await message.answer(_added_text(added, total))
+    await message.answer(
+        _added_text_creator(added, total, await _ref_link(bot, message.from_user.id)),
+        disable_web_page_preview=True,
+    )
 
 
 @router.message(SingleFSM.waiting_links)

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command
@@ -97,6 +98,27 @@ async def admin_sources(call: CallbackQuery, bot: Bot):
 
     rows = await source_stats()
     labeled = [r for r in rows if r["source"] is not None]
+
+    # Метки вида ref<tg_id> — это реферальные ссылки креаторов. Расшифровываем в имена,
+    # чтобы видеть, кто сколько привёл (влияет на приоритет на проектах).
+    ref_ids = []
+    for r in labeled:
+        m = re.fullmatch(r"ref(\d+)", str(r["source"]))
+        if m:
+            ref_ids.append(int(m.group(1)))
+    names: dict[int, str] = {}
+    if ref_ids:
+        async with get_session() as session:
+            found = (await session.execute(select(Creator).where(Creator.tg_id.in_(ref_ids)))).scalars().all()
+            names = {c.tg_id: (c.full_name or c.telegram_contact or str(c.tg_id)) for c in found}
+
+    def _label(src: str) -> str:
+        m = re.fullmatch(r"ref(\d+)", str(src))
+        if m:
+            who = names.get(int(m.group(1)), f"id {m.group(1)}")
+            return f"👤 {who}"
+        return f"<code>{src}</code>"
+
     lines = ["🔗 <b>Источники переходов</b> (<code>?start=метка</code>)\n"]
     if not labeled:
         lines.append("Пока ни одного захода с меткой.\n")
@@ -104,10 +126,7 @@ async def admin_sources(call: CallbackQuery, bot: Bot):
         lines.append("<b>Метка · заходы · регистрации (конверсия)</b>")
         for r in labeled:
             conv = f"{round(r['registered'] / r['visits'] * 100)}%" if r["visits"] else "—"
-            lines.append(
-                f"• <code>{r['source']}</code> — {r['visits']} → "
-                f"{r['registered']} ({conv})"
-            )
+            lines.append(f"• {_label(r['source'])} — {r['visits']} → {r['registered']} ({conv})")
     no_label = next((r for r in rows if r["source"] is None), None)
     if no_label:
         lines.append(f"\n<i>Без метки: {no_label['visits']} заходов "
