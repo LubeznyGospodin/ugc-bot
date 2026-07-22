@@ -52,6 +52,8 @@ def detect_platform(url: str) -> str:
         return "threads"
     if "facebook" in u or "fb.watch" in u:
         return "facebook"
+    if "likee.video" in u or "like.video" in u or "likee.com" in u:
+        return "likee"
     return "other"
 
 
@@ -75,12 +77,12 @@ def _ig_shortcode(url: str) -> str | None:
 
 
 # ── Фетчеры ───────────────────────────────────────────────────────────────────
-def fetch_youtube(url: str) -> tuple[int | None, int | None, str | None]:
+def fetch_youtube(url: str) -> tuple[int | None, str | None]:
     vid = _youtube_id(url)
     if not vid:
-        return None, None, "не распознал youtube id"
+        return None, "не распознал youtube id"
     if not settings.youtube_api_key:
-        return None, None, "нет YOUTUBE_API_KEY"
+        return None, "нет YOUTUBE_API_KEY"
     try:
         api = (
             "https://www.googleapis.com/youtube/v3/videos?part=statistics&id="
@@ -89,35 +91,31 @@ def fetch_youtube(url: str) -> tuple[int | None, int | None, str | None]:
         d = _http_json(api)
         items = d.get("items", [])
         if not items:
-            return None, None, "видео не найдено/удалено"
-        st = items[0]["statistics"]
-        likes = st.get("likeCount")  # автор мог скрыть лайки → None
-        return int(st.get("viewCount", 0)), (int(likes) if likes is not None else None), None
+            return None, "видео не найдено/удалено"
+        return int(items[0]["statistics"].get("viewCount", 0)), None
     except Exception as e:  # noqa: BLE001
-        return None, None, f"youtube: {e}"
+        return None, f"youtube: {e}"
 
 
-def fetch_vk(url: str) -> tuple[int | None, int | None, str | None]:
+def fetch_vk(url: str) -> tuple[int | None, str | None]:
     vid = _vk_id(url)
     if not vid:
-        return None, None, "не распознал vk id"
+        return None, "не распознал vk id"
     if not settings.vk_token:
-        return None, None, "нет VK_TOKEN"
+        return None, "нет VK_TOKEN"
     try:
         api = "https://api.vk.com/method/video.get?" + urllib.parse.urlencode(
             {"videos": vid, "access_token": settings.vk_token, "v": "5.199"}
         )
         d = _http_json(api)
         if "error" in d:
-            return None, None, f"vk: {d['error'].get('error_msg')}"
+            return None, f"vk: {d['error'].get('error_msg')}"
         items = d.get("response", {}).get("items", [])
         if not items:
-            return None, None, "клип не найден/приватный"
-        lk = items[0].get("likes")
-        likes = lk.get("count") if isinstance(lk, dict) else lk
-        return int(items[0].get("views", 0)), (int(likes) if likes is not None else None), None
+            return None, "клип не найден/приватный"
+        return int(items[0].get("views", 0)), None
     except Exception as e:  # noqa: BLE001
-        return None, None, f"vk: {e}"
+        return None, f"vk: {e}"
 
 
 def _ed_get(path: str, params: dict) -> dict:
@@ -140,44 +138,38 @@ def _ed_get(path: str, params: dict) -> dict:
     raise last
 
 
-def fetch_instagram(url: str) -> tuple[int | None, int | None, str | None]:
+def fetch_instagram(url: str) -> tuple[int | None, str | None]:
     code = _ig_shortcode(url)
     if not code:
-        return None, None, "не распознал ig shortcode"
+        return None, "не распознал ig shortcode"
     if not settings.ensembledata_token:
-        return None, None, "нет ENSEMBLEDATA_TOKEN"
+        return None, "нет ENSEMBLEDATA_TOKEN"
     try:
         d = _ed_get("/instagram/post/details", {"code": code})
         data = d.get("data")
         if not isinstance(data, dict):
             # НЕ утверждаем «удалён»: чаще это приватный аккаунт, лимит API или сбой
             # индекса. Прошлое значение сохраняем, строку помечаем ⚠️.
-            return None, None, "API не вернул данные (приватный аккаунт / лимит / сбой)"
+            return None, "API не вернул данные (приватный аккаунт / лимит / сбой)"
         pc = data.get("video_play_count") or data.get("video_view_count") or 0
-        # лайки в том же ответе — доп. юниты не тратим
-        likes = data.get("like_count")
-        if likes is None:
-            edge = data.get("edge_media_preview_like") or data.get("edge_liked_by") or {}
-            likes = edge.get("count") if isinstance(edge, dict) else None
-        return int(pc), (int(likes) if likes is not None else None), None
+        return int(pc), None
     except Exception as e:  # noqa: BLE001
-        return None, None, f"instagram: {e}"
+        return None, f"instagram: {e}"
 
 
-def fetch_tiktok(url: str) -> tuple[int | None, int | None, str | None]:
+def fetch_tiktok(url: str) -> tuple[int | None, str | None]:
     if not settings.ensembledata_token:
-        return None, None, "нет ENSEMBLEDATA_TOKEN"
+        return None, "нет ENSEMBLEDATA_TOKEN"
     try:
         d = _ed_get("/tt/post/info", {"url": url})
         data = d.get("data")
         rows = data if isinstance(data, list) else [data] if isinstance(data, dict) else []
         if not rows or not isinstance(rows[0], dict):
-            return None, None, "видео недоступно"
+            return None, "видео недоступно"
         st = rows[0].get("statistics", {}) or {}
-        likes = st.get("digg_count")  # в TikTok лайки называются digg
-        return int(st.get("play_count", 0)), (int(likes) if likes is not None else None), None
+        return int(st.get("play_count", 0)), None
     except Exception as e:  # noqa: BLE001
-        return None, None, f"tiktok: {e}"
+        return None, f"tiktok: {e}"
 
 
 def _threads_shortcode(url: str) -> str | None:
@@ -207,62 +199,74 @@ def _find_views(obj, _depth: int = 0):
     return None
 
 
-def _find_likes(obj, _depth: int = 0):
-    """Первое поле *like_count* с int — у Threads/Meta лайки лежат глубоко в ответе."""
-    if _depth > 6:
-        return None
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            if isinstance(v, int) and k.lower() in ("like_count", "likes_count", "digg_count"):
-                return v
-        for v in obj.values():
-            got = _find_likes(v, _depth + 1)
-            if got is not None:
-                return got
-    elif isinstance(obj, list):
-        for v in obj[:5]:
-            got = _find_likes(v, _depth + 1)
-            if got is not None:
-                return got
-    return None
-
-
-def fetch_threads(url: str) -> tuple[int | None, int | None, str | None]:
+def fetch_threads(url: str) -> tuple[int | None, str | None]:
     """Threads через EnsembleData (/threads/post/replies, можно по shortcode).
-    Просмотров API документированно НЕ отдаёт (ищем защитно), а вот лайки — отдаёт.
-    Поэтому даже без охвата строка получает лайки, а не остаётся пустой."""
+    ВНИМАНИЕ: в документированном ответе поля просмотров нет — ищем его защитно.
+    Не нашли → честная ошибка, строка остаётся под ручной ввод."""
     code = _threads_shortcode(url)
     if not code:
-        return None, None, "не распознал threads shortcode"
+        return None, "не распознал threads shortcode"
     if not settings.ensembledata_token:
-        return None, None, "нет ENSEMBLEDATA_TOKEN"
+        return None, "нет ENSEMBLEDATA_TOKEN"
     try:
         d = _ed_get("/threads/post/replies", {"id": 1, "shortcode": code})
         data = d.get("data")
         if not data:
-            return None, None, "пост не найден в API"
-        views, likes = _find_views(data), _find_likes(data)
+            return None, "пост не найден в API"
+        views = _find_views(data)
         if views is None:
-            return None, likes, "API не отдаёт просмотры — впиши вручную"
-        return int(views), likes, None
+            return None, "API не отдаёт просмотры — впиши вручную"
+        return int(views), None
     except Exception as e:  # noqa: BLE001
-        return None, None, f"threads: {e}"
+        return None, f"threads: {e}"
 
 
-def fetch_facebook(url: str) -> tuple[int | None, int | None, str | None]:
+_MOBILE_UA = (
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 "
+    "(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+)
+
+
+def fetch_likee(url: str) -> tuple[int | None, str | None]:
+    """Likee — бесплатно, из мета-описания страницы («812 views, 11 likes, …»).
+
+    Два нюанса, без которых не работает:
+    1) нужен МОБИЛЬНЫЙ User-Agent: с десктопным короткая ссылка l.likee.video/v/<code>
+       редиректит на главную вместо поста;
+    2) короткую ссылку сразу переписываем на likee.video/v/<code> — надёжнее редиректа.
+    """
+    u = re.sub(r"//l\.likee\.video/", "//likee.video/", url)
+    try:
+        req = urllib.request.Request(
+            u, headers={"User-Agent": _MOBILE_UA, "Accept-Language": "en-US,en;q=0.9"}
+        )
+        with urllib.request.urlopen(req, timeout=45) as x:
+            html = x.read().decode("utf-8", "ignore")
+            final = x.geturl()
+        if "/v/" not in final and "/video/" not in final:
+            return None, "ссылка не открылась (пост удалён/приватный?)"
+        m = re.search(r"([\d][\d.,\s]*[KMkMкм]?)\s*views", html)
+        if not m:
+            return None, "просмотры не найдены на странице"
+        return _parse_short_num(m.group(1).replace(" ", "").replace(",", "")), None
+    except Exception as e:  # noqa: BLE001
+        return None, f"likee: {e}"
+
+
+def fetch_facebook(url: str) -> tuple[int | None, str | None]:
     """Facebook: авто-источника нет. EnsembleData FB не поддерживает, а публичные
     share-ссылки отдают 400 без сессии. Только ручной ввод (он не перезатирается)."""
-    return None, None, "FB только вручную (авто-источника нет)"
+    return None, "FB только вручную (авто-источника нет)"
 
 
-def fetch_telegram(url: str) -> tuple[int | None, int | None, str | None]:
+def fetch_telegram(url: str) -> tuple[int | None, str | None]:
     """Просмотры публичного поста t.me/<channel>/<id> — из встраиваемого виджета.
     Лайков в виджете нет (реакции не отдаются) — всегда None."""
     if re.search(r"t\.me/c/", url):  # t.me/c/ — приватный канал, просмотры недоступны
-        return None, None, "приватный канал — недоступно"
+        return None, "приватный канал — недоступно"
     m = re.search(r"t\.me/([^/]+)/(\d+)", url)
     if not m:
-        return None, None, "не распознал telegram пост"
+        return None, "не распознал telegram пост"
     try:
         emb = f"https://t.me/{m.group(1)}/{m.group(2)}?embed=1&mode=tme"
         req = urllib.request.Request(emb, headers={"User-Agent": _UA})
@@ -270,10 +274,10 @@ def fetch_telegram(url: str) -> tuple[int | None, int | None, str | None]:
             html = x.read().decode("utf-8", "ignore")
         vm = re.search(r'tgme_widget_message_views[^>]*>([\d.,KkМмKM]+)</span>', html)
         if not vm:
-            return None, None, "просмотры не найдены (не публичный?)"
-        return _parse_short_num(vm.group(1)), None, None
+            return None, "просмотры не найдены (не публичный?)"
+        return _parse_short_num(vm.group(1)), None
     except Exception as e:  # noqa: BLE001
-        return None, None, f"telegram: {e}"
+        return None, f"telegram: {e}"
 
 
 def _parse_short_num(s: str) -> int:
@@ -297,20 +301,20 @@ _FETCHERS = {
     "telegram": fetch_telegram,
     "threads": fetch_threads,
     "facebook": fetch_facebook,
+    "likee": fetch_likee,
 }
 # Площадки через EnsembleData — им нужна пауза побольше (их IG/TikTok-бэкенд рейт-лимитит).
 _SLOW = {"instagram", "tiktok"}
 
 
-def fetch_reach(url: str) -> tuple[str, int | None, int | None, str | None]:
-    """→ (платформа, views|None, likes|None, error|None). Лайки приходят тем же
-    запросом, что и охват — дополнительных юнитов API не тратим."""
+def fetch_reach(url: str) -> tuple[str, int | None, str | None]:
+    """→ (платформа, views|None, error|None)."""
     pl = detect_platform(url)
     fn = _FETCHERS.get(pl)
     if fn is None:
-        return pl, None, None, "площадка не поддерживается"
-    views, likes, err = fn(url)
-    return pl, views, likes, err
+        return pl, None, "площадка не поддерживается"
+    views, err = fn(url)
+    return pl, views, err
 
 
 # ── Добавление ссылок в трекинг (из бота: креатор/админ) ──────────────────────
@@ -401,7 +405,6 @@ async def write_reach_sheet(prev_map: dict[str, int | None] | None = None) -> di
             "platform": r.platform,
             "url": r.url,
             "views": r.views,
-            "likes": r.likes,
             "updated": (r.updated_at + MSK).strftime("%d.%m %H:%M") if r.updated_at else "",
             "flag": flag(r),
             "prev": prev_map.get(r.url),   # для детекта ручной правки на стороне таблицы
@@ -498,10 +501,8 @@ async def reach_run(bot) -> dict:
             if (now - row.first_seen).days >= freeze_days:
                 frozen_cnt += 1
                 continue
-            platform, views, likes, err = await asyncio.to_thread(fetch_reach, url)
+            platform, views, err = await asyncio.to_thread(fetch_reach, url)
             row.platform, row.last_try_at = platform, now
-            if likes is not None:  # лайки могли прийти даже когда просмотров нет (Threads)
-                row.likes = likes
             if views is not None:
                 row.views, row.updated_at, row.last_error = views, now, None
             else:

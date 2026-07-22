@@ -139,7 +139,6 @@ class ReachRow(Base):
     platform: Mapped[str] = mapped_column(String(16), default="")
     first_seen: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # для заморозки
     views: Mapped[int | None] = mapped_column(Integer, nullable=True)   # последнее успешное
-    likes: Mapped[int | None] = mapped_column(Integer, nullable=True)   # приходят тем же запросом
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # когда успешно
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_try_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
