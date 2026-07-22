@@ -419,13 +419,19 @@ async def write_reach_sheet(prev_map: dict[str, int | None] | None = None) -> di
 
     # Таблица сообщила, где охват правили руками → запоминаем и больше не трогаем/не парсим.
     newly = [u for u in (res.get("manual") or []) if u]
-    if newly:
+    freed = [u for u in (res.get("unmanual") or []) if u]  # в таблице стёрли «✍️ вручную»
+    if newly or freed:
         async with get_session() as s:
             for u in newly:
                 row = (await s.execute(select(ReachRow).where(ReachRow.url == u))).scalar_one_or_none()
                 if row and not row.manual:
                     row.manual = True
                     logger.info("reach: %s помечен как ручной — больше не парсим", u[:60])
+            for u in freed:
+                row = (await s.execute(select(ReachRow).where(ReachRow.url == u))).scalar_one_or_none()
+                if row and row.manual:
+                    row.manual = False
+                    logger.info("reach: %s разморожен — парсим снова", u[:60])
             await s.commit()
     return {"ok": True, "rows": len(rows_db), "total": total, "manual_new": len(newly)}
 
