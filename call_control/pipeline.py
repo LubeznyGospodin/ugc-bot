@@ -199,7 +199,38 @@ def analyze(transcript, meta):
     return run_claude(payload)
 
 
+def sync_claude_creds():
+    """Keychain и ~/.claude/.credentials.json расходятся после ротации токена.
+    Берём копию с более поздним expiresAt и выравниваем обе."""
+    cred_file = os.path.expanduser("~/.claude/.credentials.json")
+    try:
+        kc_raw = subprocess.run(
+            ["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
+            capture_output=True, text=True, timeout=15)
+        kc = json.loads(kc_raw.stdout) if kc_raw.returncode == 0 else {}
+        fl = json.load(open(cred_file)) if os.path.exists(cred_file) else {}
+        kc_exp = (kc.get("claudeAiOauth") or {}).get("expiresAt", 0)
+        fl_exp = (fl.get("claudeAiOauth") or {}).get("expiresAt", 0)
+        if kc_exp == fl_exp:
+            return
+        fresh = kc if kc_exp > fl_exp else fl
+        merged_kc = dict(kc)
+        merged_kc["claudeAiOauth"] = fresh["claudeAiOauth"]
+        subprocess.run(
+            ["security", "add-generic-password", "-U", "-s", "Claude Code-credentials",
+             "-a", "nastasyapopova", "-w", json.dumps(merged_kc)],
+            capture_output=True, timeout=15)
+        fl["claudeAiOauth"] = fresh["claudeAiOauth"]
+        with open(cred_file, "w") as f:
+            json.dump(fl, f)
+        os.chmod(cred_file, 0o600)
+        log(f"креды синхронизированы ({'keychain' if kc_exp > fl_exp else 'файл'} свежее)")
+    except Exception as e:
+        log(f"sync_claude_creds: {e}")
+
+
 def run_claude(payload):
+    sync_claude_creds()
     # чистое окружение: без переменных вложенной Claude-сессии, с headless-токеном
     env = {
         "HOME": os.path.expanduser("~"),
@@ -253,6 +284,10 @@ def send_digest_if_due(state):
 
 
 def main():
+    # рабочее окно: пн–сб 9:00–21:59 (launchd дёргает каждые 15 мин без расписания)
+    now = datetime.now()
+    if now.weekday() == 6 or not (9 <= now.hour <= 21):
+        return
     os.makedirs(WORK_DIR, exist_ok=True)
     # лок от наложения прогонов (whisper может работать дольше интервала крона)
     import fcntl

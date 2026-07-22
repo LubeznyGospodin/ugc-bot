@@ -197,6 +197,11 @@ class SheetsClient:
         бренд br1). fields: подтвердил / срок / ссылка. Новые колонки создаются в конце."""
         return await self._post({"action": "single_update", "chat_id": chat_id, "fields": fields})
 
+
+    async def works_update(self, chat_id: int, value: str) -> dict[str, Any]:
+        """Записать в лист креаторов колонку «Работы» (создаётся В КОНЦЕ листа)."""
+        return await self._post({"action": "works_update", "chat_id": chat_id, "value": value})
+
     async def stats(self) -> StatsResult:
         payload = await self._post({"action": "stats"})
         return StatsResult.from_payload(payload)

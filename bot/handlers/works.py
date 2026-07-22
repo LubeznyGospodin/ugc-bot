@@ -97,6 +97,7 @@ async def works_collect(message: Message, state: FSMContext, bot: Bot):
             f"✅ Отлично, собрал {MAX_WORKS} работы — этого достаточно!\n"
             "Добавлю тебя в базу креаторов для брендов 🚀"
         )
+        await publish_works(bot, message.from_user.id)
         return
     await message.answer(f"➕ Принял ({n}/{MAX_WORKS}). Присылай ещё или жми «Готово».", reply_markup=_kb(n))
 
@@ -116,3 +117,45 @@ async def works_done(call: CallbackQuery, state: FSMContext, bot: Bot):
         call.message.chat.id,
         f"✅ Сохранил работы: {n}. Спасибо!\nБренды увидят их в нашей базе креаторов 🚀",
     )
+    await publish_works(bot, call.from_user.id)
+
+
+async def publish_works(bot: Bot, tg_id: int) -> None:
+    """Работы → в рабочую группу (там их видно глазами) + счётчик в колонку «Работы»
+    листа креаторов. Без этого ролики оседали только в БД бота и наружу не попадали."""
+    from datetime import datetime, timedelta
+
+    from bot.config import settings
+    from bot.sheets import SheetsError, sheets_client
+    from bot.utils.db_helpers import get_creator_by_tg_id
+
+    async with get_session() as s:
+        works = (
+            await s.execute(
+                select(CreatorWork).where(CreatorWork.tg_id == tg_id).order_by(CreatorWork.position)
+            )
+        ).scalars().all()
+    if not works:
+        return
+
+    creator = await get_creator_by_tg_id(tg_id)
+    name = (getattr(creator, "full_name", None) if creator else None) or "—"
+    tg = (getattr(creator, "telegram_contact", None) if creator else None) or "—"
+
+    # 1) в рабочую группу (как фото; если группа не задана — админам)
+    targets = [settings.photos_chat_id] if settings.photos_chat_id else list(settings.admin_ids)
+    for target in targets:
+        try:
+            await bot.send_message(target, f"🎬 Работы креатора {name} ({tg}, id {tg_id}) — {len(works)} шт.")
+            for w in works:
+                if w.file_id:
+                    await bot.send_video(target, w.file_id, supports_streaming=True)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("send works to %s failed: %s", target, e)
+
+    # 2) счётчик в таблицу креаторов
+    when = (datetime.utcnow() + timedelta(hours=3)).strftime("%d.%m.%Y")
+    try:
+        await sheets_client.works_update(tg_id, f"{len(works)} ролика(ов) · {when}")
+    except SheetsError as e:  # noqa: BLE001
+        logger.warning("works_update failed for %s: %s", tg_id, e)

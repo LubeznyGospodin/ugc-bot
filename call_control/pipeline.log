@@ -202,3 +202,110 @@
 [2026-07-22 12:00:43] готово externalCall.9f5b2132b3312a02ef9f8d03d20a61ce.1784710192
 [2026-07-22 12:15:01] звонков с 2026-07-21T12:15:01+03:00: 105
 [2026-07-22 12:30:09] звонков с 2026-07-21T12:30:07+03:00: 104
+[2026-07-22 15:52:12] звонков с 2026-07-21T15:52:09+03:00: 161
+[2026-07-22 15:52:12] обрабатываю externalCall.f6d4b2bbdfeb205edf31fcabb28a7efb.1784715390 (64 сек)
+[2026-07-22 15:53:27] ОШИБКА externalCall.f6d4b2bbdfeb205edf31fcabb28a7efb.1784715390: claude failed: Failed to authenticate. API Error: 401 Invalid authentication credentials
+
+[2026-07-22 15:53:27] обрабатываю externalCall.2e598f668e7e943fcc6c056e3cb09aca.1784715531 (33 сек)
+[2026-07-22 15:53:50] предыдущий прогон ещё идёт — выходим
+[2026-07-22 15:54:04] ОШИБКА externalCall.2e598f668e7e943fcc6c056e3cb09aca.1784715531: claude failed: Failed to authenticate: OAuth session expired and could not be refreshed
+
+[2026-07-22 15:54:04] обрабатываю externalCall.6e6903fb4810a8d3d263a58a46c07dfb.1784715919 (100 сек)
+[2026-07-22 15:55:24] ОШИБКА externalCall.6e6903fb4810a8d3d263a58a46c07dfb.1784715919: claude failed: Failed to authenticate: OAuth session expired and could not be refreshed
+
+[2026-07-22 15:55:24] обрабатываю externalCall.fb4202d69faf18b1ea2bad83db57a8c9.1784716811 (104 сек)
+[2026-07-22 15:56:33] ОШИБКА externalCall.fb4202d69faf18b1ea2bad83db57a8c9.1784716811: claude failed: Failed to authenticate: OAuth session expired and could not be refreshed
+
+[2026-07-22 15:56:33] обрабатываю externalCall.da74eb09bdb48fa4f0b101b8c9e834df.1784717169 (144 сек)
+[2026-07-22 15:58:01] ОШИБКА externalCall.da74eb09bdb48fa4f0b101b8c9e834df.1784717169: claude failed: Failed to authenticate: OAuth session expired and could not be refreshed
+
+[2026-07-22 15:58:01] обрабатываю externalCall.9c9d98a017d5935feaa03ba4ee3ad338.1784717696 (87 сек)
+[2026-07-22 15:58:51] ОШИБКА externalCall.9c9d98a017d5935feaa03ba4ee3ad338.1784717696: claude failed: Failed to authenticate: OAuth session expired and could not be refreshed
+
+[2026-07-22 15:58:51] обрабатываю externalCall.fa0972a13afe4f58170afe8f472072d2.1784719285 (71 сек)
+[2026-07-22 15:59:34] ОШИБКА externalCall.fa0972a13afe4f58170afe8f472072d2.1784719285: claude failed: Failed to authenticate: OAuth session expired and could not be refreshed
+
+[2026-07-22 15:59:34] обрабатываю externalCall.832ef6d07e761360d1ca04dd7249c6aa.1784719483 (236 сек)
+[2026-07-22 16:02:27] ОШИБКА externalCall.832ef6d07e761360d1ca04dd7249c6aa.1784719483: claude failed: Failed to authenticate: OAuth session expired and could not be refreshed
+
+[2026-07-22 16:02:27] обрабатываю externalCall.7d37b7ec21c52de0c4144882f90a4d52.1784719863 (104 сек)
+[2026-07-22 16:03:40] ОШИБКА externalCall.7d37b7ec21c52de0c4144882f90a4d52.1784719863: claude failed: Failed to authenticate: OAuth session expired and could not be refreshed
+
+[2026-07-22 16:03:40] обрабатываю externalCall.e3283067466405ae556c152bb911eedf.1784719997 (33 сек)
+[2026-07-22 16:04:02] ОШИБКА externalCall.e3283067466405ae556c152bb911eedf.1784719997: claude failed: Failed to authenticate: OAuth session expired and could not be refreshed
+
+[2026-07-22 16:04:02] обрабатываю externalCall.b99d91a50c543655d902485d3c52b906.1784720058 (70 сек)
+[2026-07-22 16:04:53] ОШИБКА externalCall.b99d91a50c543655d902485d3c52b906.1784720058: claude failed: Failed to authenticate: OAuth session expired and could not be refreshed
+
+[2026-07-22 16:04:53] обрабатываю externalCall.3b48873a110533f088d677d141589f5a.1784720272 (140 сек)
+[2026-07-22 16:06:24] ОШИБКА externalCall.3b48873a110533f088d677d141589f5a.1784720272: claude failed: Failed to authenticate: OAuth session expired and could not be refreshed
+
+[2026-07-22 16:06:24] обрабатываю externalCall.45e5e366f0dfb2246007bc681d07924f.1784721431 (62 сек)
+[2026-07-22 16:07:12] ОШИБКА externalCall.45e5e366f0dfb2246007bc681d07924f.1784721431: claude failed: Failed to authenticate: OAuth session expired and could not be refreshed
+
+[2026-07-22 16:07:12] обрабатываю externalCall.985ebf72596d68efcdd50d7f1d54b928.1784722589 (49 сек)
+[2026-07-22 16:07:39] ОШИБКА externalCall.985ebf72596d68efcdd50d7f1d54b928.1784722589: claude failed: Failed to authenticate: OAuth session expired and could not be refreshed
+
+[2026-07-22 16:07:39] обрабатываю externalCall.9dbd223c6b16980f7a1f67bafb432da1.1784723170 (98 сек)
+[2026-07-22 16:08:43] ОШИБКА externalCall.9dbd223c6b16980f7a1f67bafb432da1.1784723170: claude failed: Failed to authenticate: OAuth session expired and could not be refreshed
+
+[2026-07-22 16:08:43] обрабатываю externalCall.3c958a960664dbe0b2a5d96bf0d79c64.1784723852 (66 сек)
+[2026-07-22 16:08:52] предыдущий прогон ещё идёт — выходим
+[2026-07-22 16:09:24] ОШИБКА externalCall.3c958a960664dbe0b2a5d96bf0d79c64.1784723852: claude failed: Failed to authenticate: OAuth session expired and could not be refreshed
+
+[2026-07-22 16:09:24] обрабатываю externalCall.55ffd227bdd7ab5aa448d1bb345dac59.1784724049 (36 сек)
+[2026-07-22 16:09:46] ОШИБКА externalCall.55ffd227bdd7ab5aa448d1bb345dac59.1784724049: claude failed: Failed to authenticate: OAuth session expired and could not be refreshed
+
+[2026-07-22 16:09:46] обрабатываю externalCall.2f0cdac4515d0fa4aef3eb2266b1ecab.1784724127 (79 сек)
+[2026-07-22 16:10:29] ОШИБКА externalCall.2f0cdac4515d0fa4aef3eb2266b1ecab.1784724127: claude failed: Failed to authenticate: OAuth session expired and could not be refreshed
+
+[2026-07-22 16:12:14] звонков с 2026-07-21T16:12:13+03:00: 163
+[2026-07-22 16:12:14] обрабатываю externalCall.f6d4b2bbdfeb205edf31fcabb28a7efb.1784715390 (64 сек)
+[2026-07-22 16:12:54] готово externalCall.f6d4b2bbdfeb205edf31fcabb28a7efb.1784715390
+[2026-07-22 16:12:54] обрабатываю externalCall.2e598f668e7e943fcc6c056e3cb09aca.1784715531 (33 сек)
+[2026-07-22 16:13:27] готово externalCall.2e598f668e7e943fcc6c056e3cb09aca.1784715531
+[2026-07-22 16:13:27] обрабатываю externalCall.6e6903fb4810a8d3d263a58a46c07dfb.1784715919 (100 сек)
+[2026-07-22 16:14:02] готово externalCall.6e6903fb4810a8d3d263a58a46c07dfb.1784715919
+[2026-07-22 16:14:02] обрабатываю externalCall.fb4202d69faf18b1ea2bad83db57a8c9.1784716811 (104 сек)
+[2026-07-22 16:14:59] готово externalCall.fb4202d69faf18b1ea2bad83db57a8c9.1784716811
+[2026-07-22 16:14:59] обрабатываю externalCall.da74eb09bdb48fa4f0b101b8c9e834df.1784717169 (144 сек)
+[2026-07-22 16:15:41] готово externalCall.da74eb09bdb48fa4f0b101b8c9e834df.1784717169
+[2026-07-22 16:15:41] обрабатываю externalCall.9c9d98a017d5935feaa03ba4ee3ad338.1784717696 (87 сек)
+[2026-07-22 16:16:07] готово externalCall.9c9d98a017d5935feaa03ba4ee3ad338.1784717696
+[2026-07-22 16:16:07] обрабатываю externalCall.fa0972a13afe4f58170afe8f472072d2.1784719285 (71 сек)
+[2026-07-22 16:16:42] готово externalCall.fa0972a13afe4f58170afe8f472072d2.1784719285
+[2026-07-22 16:16:42] обрабатываю externalCall.832ef6d07e761360d1ca04dd7249c6aa.1784719483 (236 сек)
+[2026-07-22 16:17:21] готово externalCall.832ef6d07e761360d1ca04dd7249c6aa.1784719483
+[2026-07-22 16:17:21] обрабатываю externalCall.7d37b7ec21c52de0c4144882f90a4d52.1784719863 (104 сек)
+[2026-07-22 16:18:03] готово externalCall.7d37b7ec21c52de0c4144882f90a4d52.1784719863
+[2026-07-22 16:18:03] обрабатываю externalCall.e3283067466405ae556c152bb911eedf.1784719997 (33 сек)
+[2026-07-22 16:18:42] готово externalCall.e3283067466405ae556c152bb911eedf.1784719997
+[2026-07-22 16:18:42] обрабатываю externalCall.b99d91a50c543655d902485d3c52b906.1784720058 (70 сек)
+[2026-07-22 16:19:25] готово externalCall.b99d91a50c543655d902485d3c52b906.1784720058
+[2026-07-22 16:19:25] обрабатываю externalCall.3b48873a110533f088d677d141589f5a.1784720272 (140 сек)
+[2026-07-22 16:20:18] готово externalCall.3b48873a110533f088d677d141589f5a.1784720272
+[2026-07-22 16:20:18] обрабатываю externalCall.45e5e366f0dfb2246007bc681d07924f.1784721431 (62 сек)
+[2026-07-22 16:20:48] готово externalCall.45e5e366f0dfb2246007bc681d07924f.1784721431
+[2026-07-22 16:20:48] обрабатываю externalCall.985ebf72596d68efcdd50d7f1d54b928.1784722589 (49 сек)
+[2026-07-22 16:21:33] готово externalCall.985ebf72596d68efcdd50d7f1d54b928.1784722589
+[2026-07-22 16:21:33] обрабатываю externalCall.9dbd223c6b16980f7a1f67bafb432da1.1784723170 (98 сек)
+[2026-07-22 16:22:39] готово externalCall.9dbd223c6b16980f7a1f67bafb432da1.1784723170
+[2026-07-22 16:22:39] обрабатываю externalCall.3c958a960664dbe0b2a5d96bf0d79c64.1784723852 (66 сек)
+[2026-07-22 16:23:17] готово externalCall.3c958a960664dbe0b2a5d96bf0d79c64.1784723852
+[2026-07-22 16:23:17] обрабатываю externalCall.55ffd227bdd7ab5aa448d1bb345dac59.1784724049 (36 сек)
+[2026-07-22 16:23:52] готово externalCall.55ffd227bdd7ab5aa448d1bb345dac59.1784724049
+[2026-07-22 16:23:52] обрабатываю externalCall.2f0cdac4515d0fa4aef3eb2266b1ecab.1784724127 (79 сек)
+[2026-07-22 16:24:35] готово externalCall.2f0cdac4515d0fa4aef3eb2266b1ecab.1784724127
+[2026-07-22 16:39:47] звонков с 2026-07-21T16:39:42+03:00: 176
+[2026-07-22 16:39:47] обрабатываю externalCall.48882278b5078a0ae376210633c62228.1784726777 (33 сек)
+[2026-07-22 17:00:51] готово externalCall.48882278b5078a0ae376210633c62228.1784726777
+[2026-07-22 17:00:51] обрабатываю externalCall.1f05c30357f0d02733b36752e7dff262.1784726823 (308 сек)
+[2026-07-22 17:47:47] готово externalCall.1f05c30357f0d02733b36752e7dff262.1784726823
+[2026-07-22 18:02:59] звонков с 2026-07-21T18:02:57+03:00: 217
+[2026-07-22 18:02:59] обрабатываю externalCall.b679510b56ea708d77ede3478fcc2850.1784727696 (31 сек)
+[2026-07-22 18:09:40] готово externalCall.b679510b56ea708d77ede3478fcc2850.1784727696
+[2026-07-22 18:09:40] обрабатываю externalCall.dab506fa20efc75d3e09b217e027bc94.1784728015 (78 сек)
+[2026-07-22 18:18:32] готово externalCall.dab506fa20efc75d3e09b217e027bc94.1784728015
+[2026-07-22 18:18:32] обрабатываю externalCall.d2d637f217c510d4c4e5d1ccdf468756.1784728120 (65 сек)
+[2026-07-22 18:25:05] готово externalCall.d2d637f217c510d4c4e5d1ccdf468756.1784728120
+[2026-07-22 18:25:05] обрабатываю externalCall.83977dcff246c1b7d39788df66f488aa.1784728400 (92 сек)
