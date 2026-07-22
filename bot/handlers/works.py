@@ -28,23 +28,31 @@ MAX_WORKS = 4
 
 ASK_TEXT = (
     "🎬 <b>Твои лучшие работы</b>\n\n"
-    f"Пришли до {MAX_WORKS} своих лучших рекламных роликов — их увидят бренды в нашей "
-    "базе креаторов. Чем сильнее работы, тем чаще зовут на проекты 🚀\n\n"
+    f"Пришли {MAX_WORKS} своих лучших UGC-ролика (идеально с демонстрацией "
+    "продукта/услуги). Если таких нет, то просто лучшие рилсы.\n\n"
+    "Их увидят бренды в нашей базе креаторов — чем сильнее работы, тем чаще зовут "
+    "на проекты 🚀\n\n"
     "<b>Как прислать — на выбор:</b>\n"
-    "🔗 <b>Ссылкой</b> — просто скинь ссылку на свой Reels, я сам скачаю\n"
-    "📹 <b>Файлом</b> — если ролика нет в соцсетях\n\n"
+    "🔗 <b>Ссылками</b> — просто скинь ссылки на свои Reels в одном сообщении "
+    "(1 ссылка — 1 строка), я сам скачаю\n"
+    "📹 <b>Файлами</b> — если роликов нет в соцсетях\n\n"
     "Как закончишь — жми «Готово»."
 )
 
 # Инструкция-подстраховка: показываем, только если скачать по ссылке не вышло.
+# ВАЖНО: ссылку с kkclip НЕ открывают в браузере — её отправляют сообщением в Telegram,
+# он сам разворачивает предпросмотр с видео, откуда файл и сохраняют.
 MANUAL_HINT = (
     "🔗 <b>Как быстро скачать видео из Instagram</b>\n\n"
-    "1️⃣ Скопируй ссылку на свой ролик — вида\n"
+    "1️⃣ Скопируй полную ссылку на свой ролик:\n"
     "<code>https://www.instagram.com/p/DaM-ST1Av6-/</code>\n\n"
-    "2️⃣ Замени в ней <b>instagram</b> на <b>kkclip</b> — больше ничего не меняй:\n"
-    "<code>https://www.kkclip.com/p/DaM-ST1Av6-/</code>\n\n"
-    "3️⃣ Открой эту ссылку — видео откроется в просмотре, скачай файл\n\n"
-    "4️⃣ Пришли файл сюда 👇"
+    "2️⃣ Замени в ней <b>instagram</b> на <b>kkclip</b> — больше в ссылке ничего "
+    "не меняй:\n<code>https://www.kkclip.com/p/DaM-ST1Av6-/</code>\n\n"
+    "3️⃣ <b>Отправь эту ссылку сообщением в Telegram</b> — в любой чат, можно себе "
+    "в «Избранное». Переходить по ней никуда не надо!\n\n"
+    "4️⃣ В сообщении развернётся предпросмотр с видео → нажми на него правой кнопкой "
+    "(на телефоне — долгим нажатием) → <b>«Сохранить как…»</b>\n\n"
+    "5️⃣ Пришли скачанный файл сюда 👇"
 )
 
 
@@ -171,30 +179,41 @@ async def works_by_link(message: Message, state: FSMContext, bot: Bot):
         await message.answer(f"У меня уже {MAX_WORKS} твоих работы — этого достаточно 👌")
         return
 
-    wait = await message.answer("⏳ Скачиваю ролик, пара секунд…")
-    with tempfile.TemporaryDirectory() as tmp:
-        path, err = await _download_video(urls[0], tmp)
-        if err:
-            logger.warning("works: не скачал %s — %s", urls[0][:60], err)
-            await wait.edit_text(
-                f"😔 Не получилось скачать по ссылке ({err}).\n\n{MANUAL_HINT}"
-            )
-            return
-        try:
-            sent = await bot.send_video(
-                message.chat.id, FSInputFile(path), supports_streaming=True,
-                caption="✅ Забрал этот ролик",
-            )
-        except Exception as e:  # noqa: BLE001
-            logger.warning("works: не залил видео: %s", e)
-            await wait.edit_text(f"😔 Ролик скачался, но не загрузился.\n\n{MANUAL_HINT}")
-            return
-        finally:
-            if os.path.exists(path):
-                os.remove(path)
+    urls = urls[: MAX_WORKS - n]  # берём столько, сколько влезает в лимит
+    plural = "ролик" if len(urls) == 1 else "ролики"
+    wait = await message.answer(f"⏳ Скачиваю {plural}, это займёт немного времени…")
+    failed: list[str] = []
 
-    n = await add_work(message.from_user.id, file_id=sent.video.file_id, url=urls[0], source="self")
-    await wait.delete()
+    for url in urls:
+        with tempfile.TemporaryDirectory() as tmp:
+            path, err = await _download_video(url, tmp)
+            if err:
+                logger.warning("works: не скачал %s — %s", url[:60], err)
+                failed.append(err)
+                continue
+            try:
+                sent = await bot.send_video(
+                    message.chat.id, FSInputFile(path), supports_streaming=True,
+                    caption="✅ Забрал этот ролик",
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning("works: не залил видео: %s", e)
+                failed.append("не загрузилось в Telegram")
+                continue
+            finally:
+                if os.path.exists(path):
+                    os.remove(path)
+        n = await add_work(message.from_user.id, file_id=sent.video.file_id, url=url, source="self")
+
+    try:
+        await wait.delete()
+    except Exception:  # noqa: BLE001
+        pass
+
+    if failed:
+        await message.answer(
+            f"😔 Не получилось скачать: {len(failed)} из {len(urls)} ({failed[0]}).\n\n{MANUAL_HINT}"
+        )
     if n >= MAX_WORKS:
         await state.clear()
         await message.answer(
@@ -203,7 +222,10 @@ async def works_by_link(message: Message, state: FSMContext, bot: Bot):
         )
         await publish_works(bot, message.from_user.id)
         return
-    await message.answer(f"➕ Принял ({n}/{MAX_WORKS}). Присылай ещё или жми «Готово».", reply_markup=_kb(n))
+    if not failed:
+        await message.answer(
+            f"➕ Принял ({n}/{MAX_WORKS}). Присылай ещё или жми «Готово».", reply_markup=_kb(n)
+        )
 
 
 @router.callback_query(Works.collecting, F.data == "works:done")
