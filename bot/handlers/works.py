@@ -28,11 +28,23 @@ MAX_WORKS = 4
 
 ASK_TEXT = (
     "🎬 <b>Твои лучшие работы</b>\n\n"
-    f"Пришли до {MAX_WORKS} своих лучших роликов — <b>видеофайлами</b> прямо сюда "
-    "(можно по одному).\n\n"
-    "Их увидят бренды в нашей базе креаторов — чем сильнее работы, тем чаще зовут "
-    "на проекты 🚀\n\n"
+    f"Пришли до {MAX_WORKS} своих лучших рекламных роликов — их увидят бренды в нашей "
+    "базе креаторов. Чем сильнее работы, тем чаще зовут на проекты 🚀\n\n"
+    "<b>Как прислать — на выбор:</b>\n"
+    "🔗 <b>Ссылкой</b> — просто скинь ссылку на свой Reels, я сам скачаю\n"
+    "📹 <b>Файлом</b> — если ролика нет в соцсетях\n\n"
     "Как закончишь — жми «Готово»."
+)
+
+# Инструкция-подстраховка: показываем, только если скачать по ссылке не вышло.
+MANUAL_HINT = (
+    "🔗 <b>Как быстро скачать видео из Instagram</b>\n\n"
+    "1️⃣ Скопируй ссылку на свой ролик — вида\n"
+    "<code>https://www.instagram.com/p/DaM-ST1Av6-/</code>\n\n"
+    "2️⃣ Замени в ней <b>instagram</b> на <b>kkclip</b> — больше ничего не меняй:\n"
+    "<code>https://www.kkclip.com/p/DaM-ST1Av6-/</code>\n\n"
+    "3️⃣ Открой эту ссылку — видео откроется в просмотре, скачай файл\n\n"
+    "4️⃣ Пришли файл сюда 👇"
 )
 
 
@@ -91,6 +103,98 @@ async def works_collect(message: Message, state: FSMContext, bot: Bot):
         await message.answer("Это не видео 🙈 Пришли ролик видеофайлом.")
         return
     n = await add_work(message.from_user.id, file_id=obj.file_id)
+    if n >= MAX_WORKS:
+        await state.clear()
+        await message.answer(
+            f"✅ Отлично, собрал {MAX_WORKS} работы — этого достаточно!\n"
+            "Добавлю тебя в базу креаторов для брендов 🚀"
+        )
+        await publish_works(bot, message.from_user.id)
+        return
+    await message.answer(f"➕ Принял ({n}/{MAX_WORKS}). Присылай ещё или жми «Готово».", reply_markup=_kb(n))
+
+
+async def _download_video(url: str, dest_dir: str) -> tuple[str | None, str | None]:
+    """Скачать ролик по ссылке через yt-dlp → (путь к файлу, ошибка).
+
+    Работает для Reels/TikTok/VK/YouTube. Ограничиваем размер: Telegram не даёт боту
+    заливать больше 50 МБ, поэтому просим формат до ~45 МБ."""
+    import asyncio
+    import glob
+    import os
+
+    out = os.path.join(dest_dir, "w_%(id)s.%(ext)s")
+    cmd = [
+        "yt-dlp", "--no-warnings", "--no-playlist", "--socket-timeout", "30",
+        "-f", "best[filesize<45M][ext=mp4]/best[ext=mp4]/best",
+        "-o", out, url,
+    ]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        _, err = await asyncio.wait_for(proc.communicate(), timeout=180)
+    except asyncio.TimeoutError:
+        return None, "слишком долго качается"
+    except FileNotFoundError:
+        return None, "yt-dlp не установлен"
+    if proc.returncode != 0:
+        return None, (err.decode("utf-8", "ignore").strip().splitlines() or ["не смог скачать"])[-1][:120]
+    files = sorted(glob.glob(os.path.join(dest_dir, "w_*")), key=os.path.getmtime)
+    if not files:
+        return None, "файл не появился"
+    path = files[-1]
+    if os.path.getsize(path) > 49 * 1024 * 1024:
+        os.remove(path)
+        return None, "ролик тяжелее 50 МБ"
+    return path, None
+
+
+@router.message(Works.collecting, F.text.contains("http"))
+async def works_by_link(message: Message, state: FSMContext, bot: Bot):
+    """Креатор прислал ССЫЛКУ — пробуем скачать сами. Не вышло → показываем инструкцию."""
+    import os
+    import tempfile
+
+    from aiogram.types import FSInputFile
+
+    from bot.reach import extract_urls
+
+    urls = extract_urls(message.text or "")
+    if not urls:
+        await message.answer("Не вижу ссылку 🙈 Пришли ссылку на ролик или сам файл.")
+        return
+
+    n = await count_works(message.from_user.id)
+    if n >= MAX_WORKS:
+        await state.clear()
+        await message.answer(f"У меня уже {MAX_WORKS} твоих работы — этого достаточно 👌")
+        return
+
+    wait = await message.answer("⏳ Скачиваю ролик, пара секунд…")
+    with tempfile.TemporaryDirectory() as tmp:
+        path, err = await _download_video(urls[0], tmp)
+        if err:
+            logger.warning("works: не скачал %s — %s", urls[0][:60], err)
+            await wait.edit_text(
+                f"😔 Не получилось скачать по ссылке ({err}).\n\n{MANUAL_HINT}"
+            )
+            return
+        try:
+            sent = await bot.send_video(
+                message.chat.id, FSInputFile(path), supports_streaming=True,
+                caption="✅ Забрал этот ролик",
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("works: не залил видео: %s", e)
+            await wait.edit_text(f"😔 Ролик скачался, но не загрузился.\n\n{MANUAL_HINT}")
+            return
+        finally:
+            if os.path.exists(path):
+                os.remove(path)
+
+    n = await add_work(message.from_user.id, file_id=sent.video.file_id, url=urls[0], source="self")
+    await wait.delete()
     if n >= MAX_WORKS:
         await state.clear()
         await message.answer(
