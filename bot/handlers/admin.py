@@ -525,11 +525,17 @@ async def chat_id_cmd(message: Message, bot: Bot):
     Работает и в группе: добавь бота в группу и отправь там /chatid."""
     if not _admin_only(message.from_user.id):
         return
-    await message.reply(
-        f"🆔 id этого чата: <code>{message.chat.id}</code>\n"
+    thread = message.message_thread_id
+    txt = (
+        f"🆔 id чата: <code>{message.chat.id}</code>\n"
         f"тип: {message.chat.type}\n"
         f"название: {message.chat.title or '—'}"
     )
+    if thread:
+        txt += f"\n🧵 id темы: <code>{thread}</code>"
+    else:
+        txt += "\n🧵 темы нет (или это не форум). Для id темы отправь /chatid ВНУТРИ нужной темы."
+    await message.reply(txt)
 
 
 @router.message(Command("photos_to_group"))
