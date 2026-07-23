@@ -190,11 +190,25 @@ async def nudge_register(call: CallbackQuery, state: FSMContext, bot: Bot):
 # на шаге пайплайна (waiting_deadline/links/payment). Шаг восстанавливается из БД.
 @router.message(F.text == BTN_PROJECTS)
 async def my_projects(message: Message, bot: Bot):
+    from bot.projects import count_project_works, member_projects, project_card
     from bot.single import my_projects_view
+
+    # Клиентские мини-проекты (PapKids и др.) — отдельными карточками, у участников.
+    projects = await member_projects(message.from_user.id)
+    if projects:
+        for p in projects:
+            done = await count_project_works(message.from_user.id, p.code)
+            text, markup = project_card(p, done)
+            await bot.send_message(message.chat.id, text, reply_markup=markup)
+        # если участвует хотя бы в одном клиентском проекте — Сингл-карточку не навязываем,
+        # показываем только когда он реально в Сингле (my_projects_view сам это учитывает)
 
     text, markup = await my_projects_view(
         message.from_user.id, is_admin=settings.is_admin(message.from_user.id)
     )
+    # Не дублируем «пусто», если клиентские проекты уже показаны.
+    if projects and markup is None and "Пока нет активных проектов" in text:
+        return
     await bot.send_message(message.chat.id, text, reply_markup=markup)
 
 

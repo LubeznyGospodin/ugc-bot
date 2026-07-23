@@ -70,6 +70,12 @@ class Settings:
     # Через сколько дней после первого сбора замораживаем ролик (перестаём парсить — экономия).
     reach_freeze_days: int = field(default_factory=lambda: int(os.getenv("REACH_FREEZE_DAYS", "14")))
 
+    # Проект PapKids: клиентская таблица (только id/имя/счётчик) + группа с клиентом,
+    # куда пересылаются ролики (в отдельную тему форума). Пусто → пока не пересылаем.
+    papkids_sheet_id: str = field(default_factory=lambda: os.getenv("PAPKIDS_SHEET_ID", "").strip())
+    papkids_group_id: str = field(default_factory=lambda: os.getenv("PAPKIDS_GROUP_ID", "").strip())
+    papkids_topic_id: str = field(default_factory=lambda: os.getenv("PAPKIDS_TOPIC_ID", "").strip())
+
     # Пороги confidence для дедупа (см. doLookup_ в Apps Script — держим синхронно)
     lookup_auto_match_threshold: float = 0.92
     lookup_confirm_threshold: float = 0.70

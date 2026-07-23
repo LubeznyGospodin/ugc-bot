@@ -62,3 +62,9 @@ class Works(StatesGroup):
     """Сбор лучших работ креатора (ролики для карточки в базе)."""
 
     collecting = State()
+
+
+class PapKids(StatesGroup):
+    """Сбор роликов по клиентскому проекту PapKids."""
+
+    collecting = State()

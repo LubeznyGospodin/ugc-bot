@@ -198,6 +198,11 @@ class SheetsClient:
         return await self._post({"action": "single_update", "chat_id": chat_id, "fields": fields})
 
 
+    async def papkids_update(self, sheet_id: str, tg_id: int, name: str, count: int) -> dict[str, Any]:
+        """Апсерт по id в клиентскую таблицу PapKids (имя+id+счётчик, без логинов)."""
+        return await self._post({"action": "papkids_update", "sheet_id": sheet_id,
+                                 "tg_id": tg_id, "name": name, "count": count})
+
     async def works_update(self, chat_id: int, value: str) -> dict[str, Any]:
         """Записать в лист креаторов колонку «Работы» (создаётся В КОНЦЕ листа)."""
         return await self._post({"action": "works_update", "chat_id": chat_id, "value": value})

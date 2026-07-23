@@ -63,24 +63,39 @@ def _kb(done: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-async def count_works(tg_id: int) -> int:
+async def count_works(tg_id: int, project: str = "base") -> int:
     async with get_session() as s:
         return int(
-            (await s.execute(select(func.count()).select_from(CreatorWork).where(CreatorWork.tg_id == tg_id))).scalar()
+            (
+                await s.execute(
+                    select(func.count())
+                    .select_from(CreatorWork)
+                    .where(CreatorWork.tg_id == tg_id, CreatorWork.project == project)
+                )
+            ).scalar()
             or 0
         )
 
 
-async def add_work(tg_id: int, file_id: str | None, url: str | None = None, source: str = "self") -> int:
-    """→ сколько работ стало у креатора (не больше MAX_WORKS)."""
+async def add_work(
+    tg_id: int, file_id: str | None, url: str | None = None, source: str = "self",
+    project: str = "base", limit: int = MAX_WORKS,
+) -> int:
+    """→ сколько работ стало у креатора в проекте (не больше limit)."""
     async with get_session() as s:
         n = int(
-            (await s.execute(select(func.count()).select_from(CreatorWork).where(CreatorWork.tg_id == tg_id))).scalar()
+            (
+                await s.execute(
+                    select(func.count())
+                    .select_from(CreatorWork)
+                    .where(CreatorWork.tg_id == tg_id, CreatorWork.project == project)
+                )
+            ).scalar()
             or 0
         )
-        if n >= MAX_WORKS:
+        if n >= limit:
             return n
-        s.add(CreatorWork(tg_id=tg_id, file_id=file_id, url=url, source=source, position=n))
+        s.add(CreatorWork(tg_id=tg_id, project=project, file_id=file_id, url=url, source=source, position=n))
         await s.commit()
         return n + 1
 
@@ -97,7 +112,11 @@ async def works_start(call: CallbackQuery, state: FSMContext, bot: Bot):
 async def works_reset(call: CallbackQuery, state: FSMContext, bot: Bot):
     await call.answer("Очистил")
     async with get_session() as s:
-        await s.execute(delete(CreatorWork).where(CreatorWork.tg_id == call.from_user.id))
+        await s.execute(
+            delete(CreatorWork).where(
+                CreatorWork.tg_id == call.from_user.id, CreatorWork.project == "base"
+            )
+        )
         await s.commit()
     await state.set_state(Works.collecting)
     await bot.send_message(call.message.chat.id, "🗑 Готово, присылай заново.", reply_markup=_kb(0))
@@ -258,7 +277,9 @@ async def publish_works(bot: Bot, tg_id: int) -> None:
     async with get_session() as s:
         works = (
             await s.execute(
-                select(CreatorWork).where(CreatorWork.tg_id == tg_id).order_by(CreatorWork.position)
+                select(CreatorWork)
+                .where(CreatorWork.tg_id == tg_id, CreatorWork.project == "base")
+                .order_by(CreatorWork.position)
             )
         ).scalars().all()
     if not works:

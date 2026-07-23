@@ -206,8 +206,23 @@ class CreatorWork(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     tg_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    # Проект, к которому относится ролик: "base" — база @ugc_creatory, "papkids" — клиент
+    # PapKids и т.д. Разделяет работы, чтобы у одного креатора проекты не смешивались.
+    project: Mapped[str] = mapped_column(String(32), default="base", index=True)
     file_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     url: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[str] = mapped_column(String(16), default="self")
     position: Mapped[int] = mapped_column(Integer, default=0)  # порядок в карточке
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ProjectMember(Base):
+    """Кто участвует в клиентском проекте (PapKids и др.). Проект появляется в «Мои
+    проекты» ТОЛЬКО у участников — их вшивает админ по утверждённому списку."""
+
+    __tablename__ = "project_members"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project: Mapped[str] = mapped_column(String(32), index=True)
+    tg_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    added_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
