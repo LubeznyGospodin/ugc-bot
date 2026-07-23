@@ -54,6 +54,8 @@ async def init_db() -> None:
     await _add_column_if_missing("reach_rows", "pinned", "BOOLEAN DEFAULT FALSE")
     # Проект работы (база @ugc_creatory / клиент PapKids) — чтобы не смешивать.
     await _add_column_if_missing("creator_works", "project", "VARCHAR(32) DEFAULT 'base'")
+    # «Подтвердил участие» иногда пишут фразой — varchar(16) ронял sync_applications.
+    await _alter_column_type("cached_applications", "confirmed", "TEXT")
 
 
 async def _add_column_if_missing(table: str, column: str, coltype: str) -> None:

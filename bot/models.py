@@ -173,7 +173,9 @@ class CachedApplication(Base):
     reason: Mapped[str] = mapped_column(Text, default="")
     date: Mapped[str] = mapped_column(String(32), default="")
     # Пайплайн «Сингл» (зеркало новых колонок листа) — для воронки/аналитики.
-    confirmed: Mapped[str | None] = mapped_column(String(16), nullable=True)  # «Подтвердил участие»
+    # Text, не String(16): в «Подтвердил участие» иногда пишут фразой (не «да/Нет»),
+    # varchar(16) ронял весь sync_applications с value too long.
+    confirmed: Mapped[str | None] = mapped_column(Text, nullable=True)  # «Подтвердил участие»
     video: Mapped[str | None] = mapped_column(Text, nullable=True)  # «Ссылка на ролик»
     synced_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
