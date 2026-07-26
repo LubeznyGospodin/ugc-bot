@@ -249,44 +249,63 @@ def run_claude(payload):
 
 
 def send_digest_if_due(state):
+    """Шлём сводки за все дни, по которым они ещё не уходили.
+    За сегодня — только после DIGEST_HOUR; за прошлые дни — при первом же
+    запуске (догон после проспанного вечера)."""
     now = datetime.now()
     today = now.strftime("%Y-%m-%d")
-    if now.hour < DIGEST_HOUR or state.get("digest_sent") == today:
-        return
-    missed = state["missed"].get(today, {})
+    done = set(state.get("digest_days", []))
+    if state.get("digest_sent"):          # миграция со старого формата
+        done.add(state["digest_sent"])
+    daily_dir = os.path.join(BASE_DIR, "daily")
+    days = set(state["missed"].keys())
+    if os.path.isdir(daily_dir):
+        days |= {f[:10] for f in os.listdir(daily_dir) if f.endswith(".md")}
+    cutoff = (now - timedelta(days=3)).strftime("%Y-%m-%d")
+    for day in sorted(days):
+        if day in done or day < cutoff or day > today:
+            continue
+        if day == today and now.hour < DIGEST_HOUR:
+            continue
+        try:
+            send_daily_digest(day, state)
+            done.add(day)
+        except Exception as e:
+            log(f"сводка за {day} не собралась: {e}")
+    state["digest_days"] = sorted(done)[-14:]
+    state.pop("digest_sent", None)
+
+
+def send_daily_digest(day, state):
+    d = datetime.strptime(day, "%Y-%m-%d")
+    missed = state["missed"].get(day, {})
     missed_lines = ""
     if missed:
         lines = [f"📵 Недозвоны (< {MIN_DURATION} сек):"]
         for uid, cnt in sorted(missed.items(), key=lambda x: -x[1]):
             lines.append(f"— {user_name(uid)}: {cnt}")
         missed_lines = "\n".join(lines)
-
-    # сводный отчёт дня по всем разборам
-    day_file = os.path.join(BASE_DIR, "daily", today + ".md")
+    day_file = os.path.join(BASE_DIR, "daily", day + ".md")
     if os.path.exists(day_file):
         with open(os.path.join(BASE_DIR, "prompt_daily.md")) as f:
             prompt = f.read()
         with open(day_file) as f:
             reports = f.read()
-        payload = (f"{prompt}\n\nДата: {now:%d.%m.%Y}\n"
+        payload = (f"{prompt}\n\nДата: {d:%d.%m.%Y}\n"
                    f"{missed_lines or 'Недозвонов нет.'}\n\n"
                    f"РАЗБОРЫ ЗВОНКОВ ЗА ДЕНЬ:\n\n{reports}")
-        try:
-            summary = run_claude(payload)
-            tg_send(summary)
-        except Exception as e:
-            log(f"дневной отчёт не собрался: {e}")
-            if missed_lines:
-                tg_send(missed_lines)
+        tg_send(run_claude(payload))
+        log(f"сводка за {day} отправлена")
     elif missed_lines:
-        tg_send(missed_lines)
-    state["digest_sent"] = today
+        tg_send(f"📊 ИТОГИ ДНЯ {d:%d.%m} — содержательных звонков не было.\n{missed_lines}")
+        log(f"сводка за {day} отправлена (только недозвоны)")
 
 
 def main():
-    # рабочее окно: пн–сб 9:00–21:59 (launchd дёргает каждые 15 мин без расписания)
+    # рабочее окно: пн–сб 9:00–21:59; --digest (вечерний агент) окно игнорирует,
+    # чтобы отчёт уходил и при позднем пробуждении Мака
     now = datetime.now()
-    if now.weekday() == 6 or not (9 <= now.hour <= 21):
+    if "--digest" not in sys.argv and (now.weekday() == 6 or not (9 <= now.hour <= 21)):
         return
     os.makedirs(WORK_DIR, exist_ok=True)
     # лок от наложения прогонов (whisper может работать дольше интервала крона)
@@ -359,6 +378,10 @@ def main():
             log(f"готово {cid}")
         except Exception as e:
             log(f"ОШИБКА {cid}: {e}")
+            # запись удалена с Диска — ретраить бессмысленно
+            if "ERROR_NOT_FOUND" in str(e):
+                state["processed"][cid] = datetime.now().isoformat()
+                save_state(state)
             # не помечаем processed — попробуем в следующий прогон
 
     send_digest_if_due(state)

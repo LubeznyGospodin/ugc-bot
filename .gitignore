@@ -15,3 +15,16 @@ apps_script/
 
 # ОС
 .DS_Store
+
+# graphify knowledge graph (generated)
+graphify-out/
+
+# Secrets (extra patterns)
+.env.*
+!.env.example
+secrets/
+*.key
+*.pem
+
+# Temp
+tmp/
