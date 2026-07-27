@@ -33,6 +33,11 @@ async def init_db() -> None:
     # Для БД, созданной до появления поля photo, доливаем колонку идемпотентно
     # (повторный запуск/новая таблица — ALTER падает на «дубликат» и гасится).
     await _add_column_if_missing("creators", "photo", "TEXT")
+    # Размещение в канале @ugc_creatory по кнопке «Разместить»/«Нахер».
+    await _add_column_if_missing("creators", "placement", "VARCHAR(16)")
+    await _add_column_if_missing("creators", "channel_msg_id", "BIGINT")
+    await _add_column_if_missing("creators", "tilda_uid", "VARCHAR(64)")
+    await _add_column_if_missing("creators", "site_queued", "BOOLEAN DEFAULT FALSE")
     # Расширяем age до TEXT: креаторы вводят «Возраст» свободно, varchar(16) ронял синк.
     await _alter_column_type("creators", "age", "TEXT")
     # Пуш-напоминание незарегистрированным: когда отправили (NULL — не слали).

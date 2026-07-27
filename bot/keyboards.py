@@ -84,6 +84,18 @@ def works_offer_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def placement_keyboard(tg_id: int) -> InlineKeyboardMarkup:
+    """Админу: разместить креатора в канале+сайте или отклонить (спам-заявки)."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Разместить", callback_data=f"place:{tg_id}"),
+                InlineKeyboardButton(text="❌ Нахер", callback_data=f"reject:{tg_id}"),
+            ]
+        ]
+    )
+
+
 def ask_question_keyboard() -> InlineKeyboardMarkup:
     """Кнопка-ссылка на HR — для «Задать вопрос»."""
     return InlineKeyboardMarkup(

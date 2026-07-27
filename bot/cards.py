@@ -47,55 +47,61 @@ _MALE_SURNAMES = {"глоба", "кучма", "сирота", "мазепа", "�
 # Женские имена, кончающиеся не на -а/-я (тюркские и пр.) — иначе уйдут в «мужчина».
 _FEMALE_FIRST = {
     "гузель", "айгуль", "асель", "лейсан", "алсу", "жанель", "нурай", "айсылу",
-    "сюмбель", "гульнур", "энже", "лилиан", "мадлен", "жанат",
+    "сюмбель", "гульнур", "энже", "лилиан", "мадлен", "жанат", "айым",
 }
 # Имена, одинаково используемые у обоих полов → тег не ставим.
 _UNISEX_FIRST = {"саша", "женя", "валя", "слава", "айнур"}
 
 
-def guess_gender(full_name: str | None) -> str | None:
-    """'female' | 'male' | None (не уверены → тег в карточке не ставим).
+# Суффиксы фамилий — по ним слово опознаётся как фамилия, а не имя.
+_SURNAME_SUFFIX = ("ова", "ева", "ёва", "ина", "ына", "ская", "цкая", "ов", "ев", "ёв",
+                   "ин", "ын", "ский", "цкий", "ых", "их", "ко", "ук", "юк", "швили",
+                   "дзе", "ян", "енко")
 
-    Правило: сперва фамилия (надёжнее всего), затем — имя, если фамилии нет.
-    Публикуем в открытый канал, поэтому при любой неоднозначности лучше промолчать,
-    чем подписать человека неверно."""
+
+def _name_gender(w: str) -> str | None:
+    """Пол по ОДНОМУ слову — только если это уверенно имя. Иначе None (не гадаем)."""
+    if w in _UNISEX_FIRST:
+        return None
+    if w in _MALE_FIRST:
+        return "male"
+    if w in _FEMALE_FIRST:
+        return "female"
+    if w in _MALE_SURNAMES or w.endswith(_SURNAME_SUFFIX):
+        return None  # это фамилия
+    if w.endswith(("а", "я")):
+        return "female"
+    if w.endswith(("о", "у", "ы", "э", "ю", "и", "е", "ё", "ь")):
+        return None  # нетипичное для имени окончание (Русу, Софико) → CV решит
+    return "male"  # согласная/-й, не фамилия → мужское имя (Даниил, Сергей, Глеб)
+
+
+def _is_given(w: str) -> bool:
+    return _name_gender(w) is not None or w in _UNISEX_FIRST
+
+
+def guess_gender(full_name: str | None) -> str | None:
+    """'female' | 'male' | None (не уверены → тег не ставим / зовём CV).
+
+    Оцениваем ОБА слова: имя может стоять и вторым («Русу Анастасия» — фамилия первой).
+    Берём уверенную оценку по слову-имени; при конфликте/непонятности — None."""
     parts = [p.strip(".,") for p in (full_name or "").split() if p.strip(".,")]
     if not parts:
         return None
-    words = [p.lower() for p in parts]
-    if not all(all("а" <= c <= "я" or c in "ё-" for c in w) for w in words[:2]):
-        return None  # латиница/эмодзи/мусор — не гадаем
+    words = [p.lower() for p in parts[:2]]
+    if not all(all("а" <= c <= "я" or c in "ё-" for c in w) for w in words):
+        return None  # латиница/эмодзи/мусор — CV
 
-    # ИМЯ ВАЖНЕЕ ФАМИЛИИ. Несклоняемые фамилии (Черных, Бауэр, Кравчук, Шевченко)
-    # выглядят одинаково у мужчин и женщин и пола не несут — «Дарья Черных» по фамилии
-    # читалась бы как мужчина. Поэтому сперва имя, фамилия — только подстраховка.
-    by_first = _by_first_name(words[0])
-    if by_first:
-        return by_first
-
-    if len(words) >= 2:  # имя унисекс/незнакомое → пробуем склоняемую фамилию
-        surn = words[1]
-        if surn.endswith(("ова", "ева", "ёва", "ина", "ына", "ская", "цкая", "ая", "яя")):
+    guesses = [g for g in (_name_gender(w) for w in words) if g]
+    if guesses:
+        return guesses[0] if all(g == guesses[0] for g in guesses) else None
+    # имя не распозналось — последний шанс по склоняемой фамилии
+    for w in words:
+        if w.endswith(("ова", "ева", "ёва", "ина", "ына", "ская", "цкая")):
             return "female"
-        if surn.endswith(("ов", "ев", "ёв", "ин", "ын", "ский", "цкий", "ой", "ый")):
+        if w.endswith(("ов", "ев", "ёв", "ин", "ын", "ский", "цкий")):
             return "male"
-    return None  # фамилия несклоняемая и имя неоднозначное — молчим
-
-
-def _by_first_name(first: str) -> str | None:
-    if first in _UNISEX_FIRST:
-        return None
-    if first in _MALE_FIRST:
-        return "male"
-    if first in _FEMALE_FIRST:
-        return "female"
-    if first.endswith(("а", "я")):
-        return "female"
-    # На мягкий знак кончаются и женские (Гузель, Асель), и мужские (Игорь, Наиль)
-    # имена — сигнал ненадёжный, отдаём решение фамилии.
-    if first.endswith("ь"):
-        return None
-    return "male"
+    return None  # неоднозначно → компьютерное зрение (/watch, /video-eyes)
 
 
 def gender_tag(full_name: str | None) -> str | None:
@@ -109,8 +115,17 @@ def short_name(full_name: str | None) -> str:
     if not parts:
         return "—"
     if len(parts) == 1:
-        return parts[0]
-    return f"{parts[0]} {parts[1][0].upper()}"
+        return _cap(parts[0])
+    p0, p1 = parts[0], parts[1]
+    # если первое слово — не имя, а второе — имя, значит фамилия написана первой → меняем
+    if not _is_given(p0.lower()) and _is_given(p1.lower()):
+        p0, p1 = p1, p0
+    return f"{_cap(p0)} {p1[0].upper()}"
+
+
+def _cap(w: str) -> str:
+    """Заглавная первая буква, остальное как есть: «леся»→«Леся»."""
+    return w[:1].upper() + w[1:] if w else w
 
 
 def _split_categories(raw: str | None) -> list[str]:

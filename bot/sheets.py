@@ -206,6 +206,11 @@ class SheetsClient:
         return await self._post({"action": "papkids_update", "sheet_id": sheet_id,
                                  "tg_id": tg_id, "name": name, "count": count})
 
+    async def report_write(self, items: list[dict[str, Any]]) -> dict[str, Any]:
+        """Отчёт по размещению: W(ссылка на пост в канале)/X(ссылка на карточку) в главный
+        лист по chat_id. items=[{chat_id, channel_url, card_url}]."""
+        return await self._post({"action": "report_write", "items": items})
+
     async def works_update(self, chat_id: int, value: str) -> dict[str, Any]:
         """Записать в лист креаторов колонку «Работы» (создаётся В КОНЦЕ листа)."""
         return await self._post({"action": "works_update", "chat_id": chat_id, "value": value})

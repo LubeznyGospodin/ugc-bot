@@ -58,6 +58,8 @@ class Settings:
     # Группа, куда шлём фото креаторов. Пусто → шлём админам в личку (как раньше).
     # id группы узнать: добавить бота в группу и отправить там /chatid.
     photos_chat_id: str = field(default_factory=lambda: os.getenv("PHOTOS_CHAT_ID", "").strip())
+    # Канал-витрина @ugc_creatory: бот-админ постит туда карточки по кнопке «Разместить».
+    channel_id: str = field(default_factory=lambda: os.getenv("CHANNEL_ID", "-1001752246005").strip())
     # Dead-man's-switch: URL внешнего монитора (healthchecks.io), который бот пингует
     # раз в несколько минут. Если пинги пропали (хостинг встал) — монитор шлёт алерт.
     heartbeat_url: str = field(default_factory=lambda: os.getenv("HEARTBEAT_URL", "").strip())

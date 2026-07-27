@@ -306,3 +306,10 @@ async def publish_works(bot: Bot, tg_id: int) -> None:
         await sheets_client.works_update(tg_id, f"{len(works)} ролика(ов) · {when}")
     except SheetsError as e:  # noqa: BLE001
         logger.warning("works_update failed for %s: %s", tg_id, e)
+
+    # 3) заявка укомплектована (фото+видео) → админам кнопка «Разместить»/«Нахер»
+    from bot.handlers.placement import send_placement_prompt
+    try:
+        await send_placement_prompt(bot, tg_id)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("placement prompt failed for %s: %s", tg_id, e)
