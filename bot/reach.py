@@ -30,8 +30,11 @@ _UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like
 _IG_ALPH = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
 
-def _http_json(url: str, timeout: int = 45) -> dict:
-    req = urllib.request.Request(url, headers={"User-Agent": _UA, "Accept": "*/*"})
+def _http_json(url: str, timeout: int = 45, headers: dict | None = None) -> dict:
+    hdr = {"User-Agent": _UA, "Accept": "*/*"}
+    if headers:
+        hdr.update(headers)
+    req = urllib.request.Request(url, headers=hdr)
     with urllib.request.urlopen(req, timeout=timeout) as x:
         return json.load(x)
 
@@ -71,6 +74,11 @@ def _vk_id(url: str) -> str | None:
     return f"{m.group(1)}_{m.group(2)}" if m else None
 
 
+def _vk_wall_id(url: str) -> str | None:
+    m = re.search(r"wall(-?\d+)_(\d+)", url)
+    return f"{m.group(1)}_{m.group(2)}" if m else None
+
+
 def _ig_shortcode(url: str) -> str | None:
     m = re.search(r"instagram\.com/(?:reels?|p|tv)/([A-Za-z0-9_-]+)", url)
     return m.group(1) if m else None
@@ -98,12 +106,28 @@ def fetch_youtube(url: str) -> tuple[int | None, str | None]:
 
 
 def fetch_vk(url: str) -> tuple[int | None, str | None]:
-    vid = _vk_id(url)
-    if not vid:
-        return None, "не распознал vk id"
     if not settings.vk_token:
         return None, "нет VK_TOKEN"
+    wall = _vk_wall_id(url)  # wall-посты (репосты в сообщество) — считаем просмотры поста
+    vid = None if wall else _vk_id(url)
+    if not wall and not vid:
+        return None, "не распознал vk id"
     try:
+        if wall:
+            api = "https://api.vk.com/method/wall.getById?" + urllib.parse.urlencode(
+                {"posts": wall, "access_token": settings.vk_token, "v": "5.199"}
+            )
+            d = _http_json(api)
+            if "error" in d:
+                return None, f"vk: {d['error'].get('error_msg')}"
+            resp = d.get("response")
+            items = resp.get("items") if isinstance(resp, dict) else resp  # схема зависит от версии
+            if not items:
+                return None, "пост не найден/удалён"
+            views = (items[0].get("views") or {}).get("count")
+            if views is None:
+                return None, "у поста нет счётчика просмотров"
+            return int(views), None
         api = "https://api.vk.com/method/video.get?" + urllib.parse.urlencode(
             {"videos": vid, "access_token": settings.vk_token, "v": "5.199"}
         )
@@ -118,20 +142,20 @@ def fetch_vk(url: str) -> tuple[int | None, str | None]:
         return None, f"vk: {e}"
 
 
-def _ed_get(path: str, params: dict) -> dict:
-    """EnsembleData с ретраями: их IG/TikTok-бэкенд под нагрузкой временно отдаёт 495/429/5xx."""
+def _sc_get(path: str, params: dict) -> dict:
+    """ScrapeCreators с ретраями (заменил EnsembleData). Ключ идёт в заголовке x-api-key,
+    ссылка/код — в query. Бэкенд под нагрузкой временами отдаёт 429/5xx."""
     import time
 
-    url = "https://ensembledata.com/apis" + path + "?" + urllib.parse.urlencode(
-        {**params, "token": settings.ensembledata_token}
-    )
+    url = "https://api.scrapecreators.com" + path + "?" + urllib.parse.urlencode(params)
+    hdr = {"x-api-key": settings.scrapecreators_api_key}
     last = None
     for attempt in range(4):
         try:
-            return _http_json(url, timeout=60)
+            return _http_json(url, timeout=60, headers=hdr)
         except urllib.error.HTTPError as e:
             last = e
-            if e.code in (495, 429, 500, 502, 503, 504) and attempt < 3:
+            if e.code in (429, 500, 502, 503, 504) and attempt < 3:
                 time.sleep(4 * (attempt + 1))  # 4,8,12с
                 continue
             raise
@@ -139,34 +163,33 @@ def _ed_get(path: str, params: dict) -> dict:
 
 
 def fetch_instagram(url: str) -> tuple[int | None, str | None]:
-    code = _ig_shortcode(url)
-    if not code:
+    if not _ig_shortcode(url):
         return None, "не распознал ig shortcode"
-    if not settings.ensembledata_token:
-        return None, "нет ENSEMBLEDATA_TOKEN"
+    if not settings.scrapecreators_api_key:
+        return None, "нет SCRAPECREATORS_API_KEY"
     try:
-        d = _ed_get("/instagram/post/details", {"code": code})
-        data = d.get("data")
-        if not isinstance(data, dict):
-            # НЕ утверждаем «удалён»: чаще это приватный аккаунт, лимит API или сбой
-            # индекса. Прошлое значение сохраняем, строку помечаем ⚠️.
+        d = _sc_get("/v1/instagram/post", {"url": url})
+        media = (d.get("data") or {}).get("xdt_shortcode_media")
+        if not isinstance(media, dict):
+            # НЕ утверждаем «удалён»: чаще приватный аккаунт, лимит API или сбой.
+            # Прошлое значение сохраняем, строку помечаем ⚠️.
             return None, "API не вернул данные (приватный аккаунт / лимит / сбой)"
-        pc = data.get("video_play_count") or data.get("video_view_count") or 0
+        pc = media.get("video_play_count") or media.get("video_view_count")
+        if pc is None:  # фото/карусель — счётчика просмотров у IG нет
+            return None, "фото-пост без счётчика просмотров — впиши вручную"
         return int(pc), None
     except Exception as e:  # noqa: BLE001
         return None, f"instagram: {e}"
 
 
 def fetch_tiktok(url: str) -> tuple[int | None, str | None]:
-    if not settings.ensembledata_token:
-        return None, "нет ENSEMBLEDATA_TOKEN"
+    if not settings.scrapecreators_api_key:
+        return None, "нет SCRAPECREATORS_API_KEY"
     try:
-        d = _ed_get("/tt/post/info", {"url": url})
-        data = d.get("data")
-        rows = data if isinstance(data, list) else [data] if isinstance(data, dict) else []
-        if not rows or not isinstance(rows[0], dict):
+        d = _sc_get("/v2/tiktok/video", {"url": url})
+        st = (d.get("aweme_detail") or {}).get("statistics")
+        if not isinstance(st, dict):
             return None, "видео недоступно"
-        st = rows[0].get("statistics", {}) or {}
         return int(st.get("play_count", 0)), None
     except Exception as e:  # noqa: BLE001
         return None, f"tiktok: {e}"
@@ -200,20 +223,19 @@ def _find_views(obj, _depth: int = 0):
 
 
 def fetch_threads(url: str) -> tuple[int | None, str | None]:
-    """Threads через EnsembleData (/threads/post/replies, можно по shortcode).
-    ВНИМАНИЕ: в документированном ответе поля просмотров нет — ищем его защитно.
-    Не нашли → честная ошибка, строка остаётся под ручной ввод."""
-    code = _threads_shortcode(url)
-    if not code:
+    """Threads через ScrapeCreators (/v1/threads/post) — отдаёт post.view_counts."""
+    if not _threads_shortcode(url):
         return None, "не распознал threads shortcode"
-    if not settings.ensembledata_token:
-        return None, "нет ENSEMBLEDATA_TOKEN"
+    if not settings.scrapecreators_api_key:
+        return None, "нет SCRAPECREATORS_API_KEY"
     try:
-        d = _ed_get("/threads/post/replies", {"id": 1, "shortcode": code})
-        data = d.get("data")
-        if not data:
+        d = _sc_get("/v1/threads/post", {"url": url})
+        post = d.get("post")
+        if not isinstance(post, dict):
             return None, "пост не найден в API"
-        views = _find_views(data)
+        views = post.get("view_counts")
+        if views is None:  # ищем защитно — Meta иногда меняет схему
+            views = _find_views(post)
         if views is None:
             return None, "API не отдаёт просмотры — впиши вручную"
         return int(views), None
@@ -552,3 +574,15 @@ async def run_reach_loop(bot, interval: int = 900) -> None:
         except Exception as e:  # noqa: BLE001
             logger.warning("reach loop error: %s", e)
         await asyncio.sleep(interval)
+
+
+if __name__ == "__main__":  # офлайн self-check парсинга ссылок (без сети): python -m bot.reach
+    assert _vk_wall_id("https://vk.ru/wall-237248549_6") == "-237248549_6"
+    assert _vk_wall_id("https://m.vk.ru/wall-237248549_5") == "-237248549_5"
+    assert _vk_id("https://vk.ru/clip-227378214_456239442") == "-227378214_456239442"
+    assert _vk_id("https://vk.ru/clips/singl_zvuk?z=clip-240399977_456239021") == "-240399977_456239021"
+    assert _vk_wall_id("https://vk.ru/clip-227378214_456239442") is None
+    assert detect_platform("https://vk.ru/wall-237248549_6") == "vk"
+    assert _ig_shortcode("https://www.instagram.com/reel/DbAPrfYInqr/?igsh=x") == "DbAPrfYInqr"
+    assert _threads_shortcode("https://www.threads.com/@u/post/DbA27injDue?xmt=1") == "DbA27injDue"
+    print("reach self-check OK")

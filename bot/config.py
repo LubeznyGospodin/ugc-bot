@@ -66,6 +66,9 @@ class Settings:
     youtube_api_key: str = field(default_factory=lambda: os.getenv("YOUTUBE_API_KEY", "").strip())
     vk_token: str = field(default_factory=lambda: os.getenv("VK_TOKEN", "").strip())
     ensembledata_token: str = field(default_factory=lambda: os.getenv("ENSEMBLEDATA_TOKEN", "").strip())
+    # ScrapeCreators — заменил EnsembleData для IG/TikTok/Threads (триал EnsembleData кончился).
+    # Отдаёт total plays (не reach). Ключ в .env → SCRAPECREATORS_API_KEY.
+    scrapecreators_api_key: str = field(default_factory=lambda: os.getenv("SCRAPECREATORS_API_KEY", "").strip())
     reach_sheet_id: str = field(default_factory=lambda: os.getenv("REACH_SHEET_ID", "").strip())
     # Через сколько дней после первого сбора замораживаем ролик (перестаём парсить — экономия).
     reach_freeze_days: int = field(default_factory=lambda: int(os.getenv("REACH_FREEZE_DAYS", "14")))
