@@ -115,7 +115,9 @@ class SheetsClient:
         # анкеты КАЖДЫЙ раз. Даём нормальный запас: read до 20с, весь запрос до 25с.
         self.timeout = aiohttp.ClientTimeout(total=timeout, sock_connect=5, sock_read=20)
 
-    async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def _post(
+        self, payload: dict[str, Any], timeout: "aiohttp.ClientTimeout | None" = None
+    ) -> dict[str, Any]:
         if not self.webhook_url:
             raise SheetsError("SHEETS_WEBHOOK_URL не задан")
         body = {"secret": self.secret, **payload}
@@ -124,12 +126,13 @@ class SheetsClient:
         # превращается в «работает с первого раза» для пользователя.
         import asyncio as _asyncio
 
+        to = timeout or self.timeout
         text = None
         last_exc: Exception | None = None
         attempts = 3
         for attempt in range(attempts):
             try:
-                async with aiohttp.ClientSession(timeout=self.timeout) as session:
+                async with aiohttp.ClientSession(timeout=to) as session:
                     async with session.post(self.webhook_url, json=body) as resp:
                         text = await resp.text()
                         if resp.status != 200:
@@ -224,9 +227,15 @@ class SheetsClient:
         return [i for i in items if isinstance(i, dict)]
 
     async def reach_write(self, sheet_id: str, rows: list[dict], total: int) -> dict[str, Any]:
-        """Записать охваты в клиентскую таблицу (openById в Apps Script)."""
+        """Записать охваты в клиентскую таблицу (openById в Apps Script).
+
+        Запись 100+ строк с manual-детектом идёт дольше обычного update (десятки секунд),
+        поэтому даём длинный read-таймаут — иначе штатные 20с рвут сохранение и /reach
+        падает «Timeout on reading data from socket», хотя охваты уже собраны."""
+        long_to = aiohttp.ClientTimeout(total=150, sock_connect=5, sock_read=120)
         return await self._post(
-            {"action": "reach_write", "sheet_id": sheet_id, "rows": rows, "total": total}
+            {"action": "reach_write", "sheet_id": sheet_id, "rows": rows, "total": total},
+            timeout=long_to,
         )
 
     async def profile(self, chat_id: int) -> dict[str, Any] | None:
