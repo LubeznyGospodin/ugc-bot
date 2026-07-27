@@ -74,17 +74,22 @@ async def send_placement_prompt(bot: Bot, tg_id: int) -> None:
     if creator.placement:  # уже pending/placed/rejected — не спамим повторными работами
         return
     await _set(tg_id, placement="pending")
+    ph = photos[:MAX_PHOTOS]
+    vd = [w for w in works if w.file_id][:MAX_VIDEOS]
+    # Альбом-превью ровно того, что уйдёт в канал — админ видит контент и решает.
+    media: list = [InputMediaPhoto(media=p.file_id) for p in ph]
+    media += [InputMediaVideo(media=w.file_id) for w in vd]
     handle = (creator.username and f"@{creator.username}") or creator.telegram_contact or "—"
     text = (
-        f"🆕 <b>{short_name(creator.full_name)}</b> — заявка укомплектована "
-        f"(фото {len(photos)} + видео {len(works)})\n"
-        f"📍 {creator.city or '—'}\n"
+        f"👆 <b>{short_name(creator.full_name)}</b> · 📍 {creator.city or '—'} · "
         f"🎬 {creator.categories or '—'}\n"
-        f"👤 {handle} · id {tg_id}\n\n"
+        f"👤 {handle} · id {tg_id} · фото {len(ph)} + видео {len(vd)}\n\n"
         f"Разместить в канал @ugc_creatory и на сайт?"
     )
     for admin_id in settings.admin_ids:
         try:
+            if media:
+                await bot.send_media_group(admin_id, media)
             await bot.send_message(
                 admin_id, text, reply_markup=placement_keyboard(tg_id), parse_mode="HTML"
             )
