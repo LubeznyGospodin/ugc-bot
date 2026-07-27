@@ -28,3 +28,7 @@ secrets/
 
 # Temp
 tmp/
+
+# Telethon session (секрет — не коммитить)
+*.session
+*.session-journal
