@@ -87,6 +87,9 @@ async def main() -> None:
 
     asyncio.create_task(run_reach_loop(bot))
 
+    import shutil
+    logger.info("ffmpeg=%s ffprobe=%s (нужны для нормализации видео в канал)",
+                shutil.which("ffmpeg"), shutil.which("ffprobe"))
     logger.info("Бот запускается (polling)...")
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
