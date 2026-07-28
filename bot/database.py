@@ -38,6 +38,8 @@ async def init_db() -> None:
     await _add_column_if_missing("creators", "channel_msg_id", "BIGINT")
     await _add_column_if_missing("creators", "tilda_uid", "VARCHAR(64)")
     await _add_column_if_missing("creators", "site_queued", "BOOLEAN DEFAULT FALSE")
+    # Видео перезалито с корректными размерами+обложкой → не нормализуем повторно.
+    await _add_column_if_missing("creator_works", "normalized", "BOOLEAN DEFAULT FALSE")
     # Расширяем age до TEXT: креаторы вводят «Возраст» свободно, varchar(16) ронял синк.
     await _alter_column_type("creators", "age", "TEXT")
     # Пуш-напоминание незарегистрированным: когда отправили (NULL — не слали).

@@ -40,28 +40,30 @@ MAX_DL = 20 * 1024 * 1024  # Bot API качает file_id только до 20М
 
 
 async def _video_ids(bot: Bot, works: list) -> list[str]:
-    """file_id работ, ГАРАНТИРОВАННО как видео (не document-вложение). Работу, залитую
-    файлом (document, ≤20МБ), качаем и перезаливаем как видео, новый file_id кэшируем в БД —
-    чтобы в канал никогда не ушёл .MP4-файлом. >20МБ Bot API не скачает → пропускаем
-    (лучше меньше видео, чем файл-вложение)."""
+    """file_id работ, готовые к альбому: КАЖДОЕ видео перезаливаем с корректными размерами
+    (ffprobe, не квадрат) + обложкой (ffmpeg, не чёрная), новый file_id кэшируем в БД (флаг
+    normalized). Нормализуем ВСЕ, а не только document: Telegram у исходного video-file_id
+    часто держит кривые (320×320) метаданные даже для портретного файла → квадрат в альбоме.
+    Уже normalized → отдаём как есть. >20МБ Bot API не скачает → отдаём оригинал (редко)."""
     out: list[str] = []
     for w in works[:MAX_VIDEOS]:
         if not w.file_id:
             continue
+        if w.normalized:  # уже перезалито корректно
+            out.append(w.file_id)
+            continue
         try:
             f = await bot.get_file(w.file_id)
         except Exception:  # noqa: BLE001
-            continue
-        path = f.file_path or ""
-        if not path.startswith("documents/"):
-            out.append(w.file_id)  # уже видео/анимация — играется
+            out.append(w.file_id)
             continue
         if (f.file_size or 0) > MAX_DL:
-            logger.warning("work %s: >20МБ document, пропуск (нужен Telethon)", w.id)
+            logger.warning("work %s: >20МБ, не нормализуем (нужен Telethon)", w.id)
+            out.append(w.file_id)
             continue
         try:
-            data = (await bot.download_file(path)).read()
-            # ТВЁРДОЕ ПРАВИЛО: перезалив ТОЛЬКО с обложкой (не чёрной) и размерами (не квадрат).
+            data = (await bot.download_file(f.file_path)).read()
+            # ТВЁРДОЕ ПРАВИЛО (docs/CHANNEL_POSTING.md): обложка (не чёрная) + размеры (не квадрат).
             with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tf:
                 tf.write(data)
                 tmp = tf.name
@@ -85,11 +87,15 @@ async def _video_ids(bot: Bot, works: list) -> list[str]:
                 async with get_session() as s:
                     ww = await s.get(CreatorWork, w.id)
                     if ww:
-                        ww.file_id = vid  # кэш: следующий постинг уже без перезаливки
+                        ww.file_id = vid
+                        ww.normalized = True
                         await s.commit()
                 out.append(vid)
+            else:
+                out.append(w.file_id)
         except Exception as e:  # noqa: BLE001
             logger.warning("normalize work %s failed: %s", w.id, e)
+            out.append(w.file_id)
     return out
 
 

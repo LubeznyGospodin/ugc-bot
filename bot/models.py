@@ -224,6 +224,10 @@ class CreatorWork(Base):
     source: Mapped[str] = mapped_column(String(16), default="self")
     position: Mapped[int] = mapped_column(Integer, default=0)  # порядок в карточке
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # Видео перезалито ботом с корректными размерами+обложкой (ffprobe/ffmpeg) → file_id
+    # заменён, повторно не нормализуем. Telegram у исходных file_id часто хранит кривые
+    # (квадратные) метаданные даже для портретного файла — отсюда квадрат в альбоме.
+    normalized: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class ProjectMember(Base):
