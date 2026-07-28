@@ -28,7 +28,7 @@ from bot.database import get_session
 from bot.keyboards import placement_keyboard
 from bot.models import Creator, CreatorPhoto, CreatorWork
 from bot.sheets import SheetsError, sheets_client
-from bot.utils.video import make_thumb, probe_dims
+from bot.utils.video import make_thumb, probe_dims, to_playable_mp4
 
 logger = logging.getLogger(__name__)
 router = Router(name="placement")
@@ -63,15 +63,24 @@ async def _video_ids(bot: Bot, works: list) -> list[str]:
             continue
         try:
             data = (await bot.download_file(f.file_path)).read()
-            # ТВЁРДОЕ ПРАВИЛО (docs/CHANNEL_POSTING.md): обложка (не чёрная) + размеры (не квадрат).
+            # ТВЁРДОЕ ПРАВИЛО (docs/CHANNEL_POSTING.md): H.264 (иначе VP9/HEVC не играют) +
+            # обложка (не чёрная) + размеры (не квадрат).
             with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tf:
                 tf.write(data)
                 tmp = tf.name
+            out = tmp + ".h264.mp4"
             try:
-                dur, vw, vh = probe_dims(tmp)
-                thumb = make_thumb(tmp)
+                if to_playable_mp4(tmp, out):
+                    data = open(out, "rb").read()  # H.264 + faststart
+                    src = out
+                else:
+                    src = tmp  # фолбэк: исходник как есть
+                dur, vw, vh = probe_dims(src)
+                thumb = make_thumb(src)
             finally:
-                os.unlink(tmp)
+                for p in (tmp, out):
+                    if os.path.exists(p):
+                        os.unlink(p)
             kwargs: dict = {"supports_streaming": True, "disable_notification": True}
             if vw and vh:
                 kwargs.update(width=vw, height=vh, duration=dur)

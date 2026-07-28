@@ -10,6 +10,7 @@ ffmpeg/ffprobe-хелперы для постинга видео в канал.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 
 
@@ -35,6 +36,31 @@ def probe_dims(path: str) -> tuple[int, int, int]:
         return dur, w, h
     except Exception:  # noqa: BLE001
         return 0, 0, 0
+
+
+def _vcodec(path: str) -> str:
+    try:
+        return subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=codec_name", "-of", "default=nw=1:nk=1", path],
+            capture_output=True, text=True).stdout.strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def to_playable_mp4(src: str, dst: str) -> bool:
+    """Гарантируем H.264 + faststart (иначе Telegram-плеер не воспроизводит — напр. VP9/HEVC
+    из TikTok/WhatsApp). H.264 → быстрый re-mux (copy) с moov впереди; иначе — перекодировка
+    в H.264 (libx264 veryfast). Возвращает True если dst создан."""
+    codec = _vcodec(src)
+    if codec == "h264":
+        cmd = ["ffmpeg", "-y", "-i", src, "-c", "copy", "-movflags", "+faststart", dst]
+    else:
+        cmd = ["ffmpeg", "-y", "-i", src, "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+               "-pix_fmt", "yuv420p", "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+               "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", dst]
+    r = subprocess.run(cmd, capture_output=True)
+    return r.returncode == 0 and os.path.exists(dst) and os.path.getsize(dst) > 0
 
 
 def make_thumb(path: str) -> bytes | None:
