@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 
 from aiogram import Bot, F, Router
-from aiogram.types import CallbackQuery, InputMediaPhoto, InputMediaVideo
+from aiogram.types import BufferedInputFile, CallbackQuery, InputMediaPhoto, InputMediaVideo
 from sqlalchemy import select
 
 from bot.cards import CATALOG_URL, build_creator_card, short_name
@@ -33,6 +33,48 @@ router = Router(name="placement")
 CARD_URL = "https://packman-prod.ru/ugc_creators/tproduct/{uid}"
 MAX_PHOTOS = 2
 MAX_VIDEOS = 4
+MAX_DL = 20 * 1024 * 1024  # Bot API качает file_id только до 20МБ
+
+
+async def _video_ids(bot: Bot, works: list) -> list[str]:
+    """file_id работ, ГАРАНТИРОВАННО как видео (не document-вложение). Работу, залитую
+    файлом (document, ≤20МБ), качаем и перезаливаем как видео, новый file_id кэшируем в БД —
+    чтобы в канал никогда не ушёл .MP4-файлом. >20МБ Bot API не скачает → пропускаем
+    (лучше меньше видео, чем файл-вложение)."""
+    out: list[str] = []
+    for w in works[:MAX_VIDEOS]:
+        if not w.file_id:
+            continue
+        try:
+            f = await bot.get_file(w.file_id)
+        except Exception:  # noqa: BLE001
+            continue
+        path = f.file_path or ""
+        if not path.startswith("documents/"):
+            out.append(w.file_id)  # уже видео/анимация — играется
+            continue
+        if (f.file_size or 0) > MAX_DL:
+            logger.warning("work %s: >20МБ document, пропуск (нужен Telethon)", w.id)
+            continue
+        try:
+            data = (await bot.download_file(path)).read()
+            m = await bot.send_video(settings.admin_ids[0], BufferedInputFile(data, "v.mp4"),
+                                     supports_streaming=True, disable_notification=True)
+            vid = m.video.file_id if m.video else None
+            try:
+                await bot.delete_message(settings.admin_ids[0], m.message_id)
+            except Exception:  # noqa: BLE001
+                pass
+            if vid:
+                async with get_session() as s:
+                    ww = await s.get(CreatorWork, w.id)
+                    if ww:
+                        ww.file_id = vid  # кэш: следующий постинг уже без перезаливки
+                        await s.commit()
+                out.append(vid)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("normalize work %s failed: %s", w.id, e)
+    return out
 
 
 async def _load(tg_id: int):
@@ -75,15 +117,15 @@ async def send_placement_prompt(bot: Bot, tg_id: int) -> None:
         return
     await _set(tg_id, placement="pending")
     ph = photos[:MAX_PHOTOS]
-    vd = [w for w in works if w.file_id][:MAX_VIDEOS]
+    vids = await _video_ids(bot, works)  # нормализуем document→video (и кэшируем)
     # Альбом-превью ровно того, что уйдёт в канал — админ видит контент и решает.
     media: list = [InputMediaPhoto(media=p.file_id) for p in ph]
-    media += [InputMediaVideo(media=w.file_id) for w in vd]
+    media += [InputMediaVideo(media=v) for v in vids]
     handle = (creator.username and f"@{creator.username}") or creator.telegram_contact or "—"
     text = (
         f"👆 <b>{short_name(creator.full_name)}</b> · 📍 {creator.city or '—'} · "
         f"🎬 {creator.categories or '—'}\n"
-        f"👤 {handle} · id {tg_id} · фото {len(ph)} + видео {len(vd)}\n\n"
+        f"👤 {handle} · id {tg_id} · фото {len(ph)} + видео {len(vids)}\n\n"
         f"Разместить в канал @ugc_creatory и на сайт?"
     )
     for admin_id in settings.admin_ids:
@@ -111,9 +153,9 @@ async def do_place(call: CallbackQuery, bot: Bot) -> None:
         await call.answer("Уже размещён")
         return
     ph = photos[:MAX_PHOTOS]
-    vd = [w for w in works if w.file_id][:MAX_VIDEOS]
-    if not ph and not vd:
-        await call.answer("Нет медиа", show_alert=True)
+    vids = await _video_ids(bot, works)  # обычно уже видео (кэш из превью) → без перезаливки
+    if not ph and not vids:
+        await call.answer("Нет валидного медиа", show_alert=True)
         return
 
     card_url = CARD_URL.format(uid=creator.tilda_uid) if creator.tilda_uid else CATALOG_URL
@@ -123,9 +165,9 @@ async def do_place(call: CallbackQuery, bot: Bot) -> None:
     for p in ph:
         media.append(InputMediaPhoto(
             media=p.file_id, caption=cap if not media else None, parse_mode="HTML"))
-    for w in vd:
+    for v in vids:
         media.append(InputMediaVideo(
-            media=w.file_id, caption=cap if not media else None, parse_mode="HTML"))
+            media=v, caption=cap if not media else None, parse_mode="HTML"))
 
     try:
         sent = await bot.send_media_group(int(settings.channel_id), media)
