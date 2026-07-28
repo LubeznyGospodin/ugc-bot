@@ -15,6 +15,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 
 from aiogram import Bot, F, Router
 from aiogram.types import BufferedInputFile, CallbackQuery, InputMediaPhoto, InputMediaVideo
@@ -26,6 +28,7 @@ from bot.database import get_session
 from bot.keyboards import placement_keyboard
 from bot.models import Creator, CreatorPhoto, CreatorWork
 from bot.sheets import SheetsError, sheets_client
+from bot.utils.video import make_thumb, probe_dims
 
 logger = logging.getLogger(__name__)
 router = Router(name="placement")
@@ -58,8 +61,21 @@ async def _video_ids(bot: Bot, works: list) -> list[str]:
             continue
         try:
             data = (await bot.download_file(path)).read()
-            m = await bot.send_video(settings.admin_ids[0], BufferedInputFile(data, "v.mp4"),
-                                     supports_streaming=True, disable_notification=True)
+            # ТВЁРДОЕ ПРАВИЛО: перезалив ТОЛЬКО с обложкой (не чёрной) и размерами (не квадрат).
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tf:
+                tf.write(data)
+                tmp = tf.name
+            try:
+                dur, vw, vh = probe_dims(tmp)
+                thumb = make_thumb(tmp)
+            finally:
+                os.unlink(tmp)
+            kwargs: dict = {"supports_streaming": True, "disable_notification": True}
+            if vw and vh:
+                kwargs.update(width=vw, height=vh, duration=dur)
+            if thumb:
+                kwargs["thumbnail"] = BufferedInputFile(thumb, "t.jpg")
+            m = await bot.send_video(settings.admin_ids[0], BufferedInputFile(data, "v.mp4"), **kwargs)
             vid = m.video.file_id if m.video else None
             try:
                 await bot.delete_message(settings.admin_ids[0], m.message_id)
