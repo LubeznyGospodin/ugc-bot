@@ -17,6 +17,7 @@ video.save в сообщество + отложенный wall.post (юзер-т
   .venv/bin/python singl_seed.py wave   # спланировать+запостить публикации на сегодня (launchd 09:00)
   .venv/bin/python singl_seed.py plan   # перезаписать лист «План посева» из state
   .venv/bin/python singl_seed.py stats  # просмотры → «Посевы (факт)» + главный лист + ТГ (launchd 20:00)
+  .venv/bin/python singl_seed.py links  # ссылки свежевышедших постов → база охвата (launchd 13/17/21/23:45)
 
 Состояние — ~/Desktop/singl_seed/state.json. Исходники — src/<имя>.mp4: новый ролик
 креатора = положить файл в src/ и добавить запись в SOURCES.
@@ -45,6 +46,7 @@ STATE = SEED_DIR / "state.json"
 A = "Single1_skazhi_pesney"
 B = "Single_pesnya_vpodarok"
 SHORT = {A: "SP", B: "PV"}
+LABEL = {A: "Посев · Скажи песней", B: "Посев · Песня в подарок"}
 ACCOUNTS = [(p, pl) for p in (A, B) for pl in ("tiktok", "instagram", "youtube", "vk")]
 
 # VK — напрямую (юзер-токен админа сообществ, бессрочный): video.save + отложенный wall.post
@@ -179,16 +181,61 @@ def pick_sources(state: dict, date_s: str) -> list[tuple[str, str, str, str]]:
                 print(f"{key}: база исчерпана (кап 10 копий) — слот {k + 1} пропущен")
                 continue
             src = cands[0]
-            # слоты: 10:30 / 13:00 / 15:30 / 18:00 / 20:30 + сдвиг 12 мин на аккаунт;
-            # прошедшее время двигаем вперёд от «сейчас»
+            # слоты равномерно по дню 10:30–20:30 (утро/день/вечер при любом темпе):
+            # N=2 → 10:30, 20:30; N=3 → 10:30, 15:30, 20:30; N=5 → каждые 2.5ч.
+            # +12 мин сдвига на аккаунт; прошедшее время двигаем вперёд от «сейчас»
+            step_h = 10 / max(target - 1, 1)
             when = datetime.strptime(date_s, "%Y-%m-%d").replace(hour=10, minute=30) \
-                + timedelta(hours=2.5 * k, minutes=12 * idx)
+                + timedelta(hours=step_h * k, minutes=12 * idx)
             if when < now + timedelta(minutes=30):
                 when = now + timedelta(minutes=35 + 12 * idx + 90 * slot_i)
             plan.append((profile, platform, src, when.strftime("%Y-%m-%dT%H:%M:00+03:00")))
             used_today.add(src)
             global_use[src] = global_use.get(src, 0) + 1
     return plan
+
+
+def seed_write(rows: list[dict]) -> None:
+    """Апсерт строк в главный лист reach-таблицы (идут в «Общий охват»)."""
+    if not rows:
+        return
+    r = requests.post(WEBHOOK, json={
+        "secret": SECRET, "action": "seed_write", "sheet_id": SHEET_ID, "rows": rows,
+    }, timeout=120)
+    print("seed_write:", r.status_code, r.text[:120])
+
+
+def links() -> None:
+    """Подтянуть ссылки свежевышедших upload-post-постов в базу (охват добьёт stats).
+
+    Гоняется launchd несколько раз в день: ссылка попадает в «Общий охват»
+    сразу после публикации, не дожидаясь вечернего сбора.
+    """
+    from papkids_uploadpost import media
+
+    state = load_state()
+    seen = set(state.setdefault("seen_posts", []))
+    now = datetime.now()
+    new_rows = []
+    for profile in (A, B):
+        for platform in ("tiktok", "instagram", "youtube"):
+            try:
+                posts = media(profile, platform)
+            except Exception as e:  # noqa: BLE001
+                print(f"{profile}/{platform}: media failed: {e}")
+                continue
+            for p in posts:
+                pid = f"{platform}:{p['id']}"
+                if pid in seen or not p.get("permalink"):
+                    continue
+                seen.add(pid)
+                new_rows.append({"date_added": now.strftime("%d.%m"), "creator": LABEL[profile],
+                                 "platform": platform, "url": p["permalink"], "views": 0,
+                                 "updated": now.strftime("%d.%m %H:%M")})
+    seed_write(new_rows)
+    state["seen_posts"] = sorted(seen)
+    save_state(state)
+    print(f"новых ссылок: {len(new_rows)}")
 
 
 def wave() -> None:
@@ -225,6 +272,10 @@ def wave() -> None:
                 "when": when, "profile": profile, "platform": "vk", "src": src,
                 "job_id": f"vk{vid}"}
             save_state(state)
+            # ссылка известна сразу — в базу охвата не дожидаясь выхода
+            seed_write([{"date_added": date_s[8:] + "." + date_s[5:7], "creator": LABEL[profile],
+                         "platform": "vk", "url": f"https://vk.com/video-{VK_GROUPS[profile]}_{vid}",
+                         "views": 0, "updated": datetime.now().strftime("%d.%m %H:%M")}])
             continue
         yt_title = caption.split("#")[0].strip()
         if len(yt_title) > 100:
@@ -327,16 +378,13 @@ def stats() -> None:
 
     # апсерт в ГЛАВНЫЙ лист reach-таблицы: посевные просмотры идут в «Общий охват»
     # (цель кампании 2 млн). Бот эти строки не знает и не парсит — токены целы.
-    label = {A: "Посев · Скажи песней", B: "Посев · Песня в подарок"}
-    seed_rows = [{"date_added": today[:5], "creator": label[r[1]], "platform": r[2],
-                  "url": r[4], "views": r[5], "updated": datetime.now().strftime("%d.%m %H:%M")}
-                 for r in rows if r[4]]
-    if seed_rows:
-        r = requests.post(WEBHOOK, json={
-            "secret": SECRET, "action": "seed_write", "sheet_id": SHEET_ID,
-            "rows": seed_rows,
-        }, timeout=120)
-        print("seed_write:", r.status_code, r.text[:120])
+    seed_write([{"date_added": today[:5], "creator": LABEL[r[1]], "platform": r[2],
+                 "url": r[4], "views": r[5], "updated": datetime.now().strftime("%d.%m %H:%M")}
+                for r in rows if r[4]])
+    # пометить как увиденные, чтобы links не перезаписал свежие просмотры нулём
+    seen = set(state.setdefault("seen_posts", []))
+    seen.update(f"{r[2]}:{r[3]}" for r in rows)
+    state["seen_posts"] = sorted(seen)
 
     if rows:
         header_needed = "_stats" not in state
@@ -368,4 +416,4 @@ def stats() -> None:
 
 
 if __name__ == "__main__":
-    {"wave": wave, "plan": lambda: plan_sheet(), "stats": stats}[sys.argv[1]]()
+    {"wave": wave, "plan": lambda: plan_sheet(), "stats": stats, "links": links}[sys.argv[1]]()
