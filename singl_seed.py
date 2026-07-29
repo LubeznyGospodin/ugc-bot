@@ -1,23 +1,30 @@
 """Посев Сингла: уникализированные копии топ-роликов кампании → аккаунты брендов.
 
-Ролики лежат в ~/Desktop/singl_seed/{src,out}. Копии сделаны uniq_bot/uniquify.py
-(preset=strong, mirror=False — на роликах текст, hflip палится).
+Схема «в разнобой»: аккаунт = профиль×площадка (6 шт: 2 бренда × TikTok/IG/YouTube).
+Каждая публикация — СВОЯ уникализированная копия исходника (uniq_bot/uniquify.py,
+preset=strong, mirror=False — на роликах текст). Один исходник не повторяется на
+одном аккаунте и, пока хватает контента, не выходит дважды в один день.
 
-Профили upload-post (по 3 площадки: tiktok+instagram+youtube):
+Темп на аккаунт/день: 29.07 — 2, 30.07 — 3, 31.07 — 4, дальше — 5.
+VK (сообщества Сингла) — ждёт токен админа сообществ; добавим 4-й площадкой.
+
+Профили upload-post:
   Single1_skazhi_pesney  — «Скажи песней»   (singl.zvuk / skazhi_pesney / @skazhi.pesney)
   Single_pesnya_vpodarok — «Песня в подарок» (pesnya.vpodarok / pesnya_v_podar_ok / @pesnya.vpodarok)
 
 Команды:
-  .venv/bin/python singl_seed.py post   # запостить/зашедулить всё pending из PLAN
-  .venv/bin/python singl_seed.py plan   # записать план в лист «План посева» клиентской таблицы
-  .venv/bin/python singl_seed.py stats  # собрать просмотры постов → лист «Посевы (факт)» + ТГ-отчёт
+  .venv/bin/python singl_seed.py wave   # спланировать+запостить публикации на сегодня (launchd 09:00)
+  .venv/bin/python singl_seed.py plan   # перезаписать лист «План посева» из state
+  .venv/bin/python singl_seed.py stats  # просмотры → «Посевы (факт)» + главный лист + ТГ (launchd 20:00)
 
-Состояние (что уже отправлено + прошлые тоталы) — ~/Desktop/singl_seed/state.json.
-stats гоняет cron ежедневно в 20:00 (запись в crontab пользователя).
+Состояние — ~/Desktop/singl_seed/state.json. Исходники — src/<имя>.mp4: новый ролик
+креатора = положить файл в src/ и добавить запись в SOURCES.
 """
 
+import asyncio
 import json
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import requests
@@ -30,131 +37,197 @@ WEBHOOK = ("https://script.google.com/macros/s/AKfycbyDWDeOWwdQFT-UHJSdBaHvcXCNF
            "S1rA1Vq61MrKk50DxAbk0mWLlDZUF-1saGUY/exec")
 SECRET = "YfNLxVxjB5UddfEpf-xfcRjC_ih4MusfJg1QDxVt4o0"
 SHEET_ID = "14iH1s6bctklEuQ5kVGgjolvrP4XAKPScZkhTcz_-qRY"
-PLAN_SHEET = "План посева"
 
 SEED_DIR = Path.home() / "Desktop" / "singl_seed"
 STATE = SEED_DIR / "state.json"
-PLATFORMS = ["tiktok", "instagram", "youtube"]
 
 A = "Single1_skazhi_pesney"
 B = "Single_pesnya_vpodarok"
+SHORT = {A: "SP", B: "PV"}
+ACCOUNTS = [(p, pl) for p in (A, B) for pl in ("tiktok", "instagram", "youtube")]
 
-# файл (из out/), профиль, дата+время МСК, подпись; источник — для листа плана
-PLAN = [
-    ("mazitova_u1.mp4", A, "2026-07-29T12:30:00+03:00",
-     "Лучший подарок — тот, что нельзя купить в магазине 🎁 Персональная песня для вашего человека 🎶 #песнявподарок #подарок #сюрприз #идеяподарка",
-     "Регина Мазитова · https://youtube.com/shorts/83RACeOTO4U"),
-    ("tishchenko_u1.mp4", B, "2026-07-29T18:00:00+03:00",
-     "Она услышала песню про себя и расплакалась 🥹 Песня в подарок — эмоция, которую запомнят навсегда 🎶 #песнявподарок #подароксюрприз #эмоции",
-     "Татьяна Тищенко · https://vk.ru/clip-186704538_456239176"),
-    ("arina1_u1.mp4", A, "2026-07-30T12:30:00+03:00",
-     "Что подарить человеку, у которого всё есть? Песню про него 🎤 #песнявподарок #идеяподарка #сюрприз",
-     "Арина · https://vt.tiktok.com/ZSXpCncGB/"),
-    ("vahrameeva_u1.mp4", B, "2026-07-30T18:00:00+03:00",
-     "Подарок за 5 минут, а мурашки на всю жизнь 🎶 Персональная песня на заказ #песнявподарок #подарок #мурашки",
-     "Алина Вахрамеева · https://vm.tiktok.com/ZGd9K1F9e/"),
-    ("kuptsova_u1.mp4", A, "2026-07-31T12:30:00+03:00",
-     "Такой подарок не передарят 😄 Песня, написанная специально про вашего человека 🎁 #песнявподарок #подарокдевушке #подарокмаме",
-     "Анастасия Купцова · https://youtu.be/UfHQ_KQJuRw"),
-    ("arina2_u1.mp4", B, "2026-07-31T18:00:00+03:00",
-     "Реакция на песню про себя — бесценна 🥹🎶 Закажи песню в подарок #песнявподарок #реакция #сюрприз",
-     "Арина · https://vt.tiktok.com/ZSXpCQkLp/"),
-    ("bauer_u1.mp4", A, "2026-08-01T12:30:00+03:00",
-     "Забудь про носки и сертификаты — подари песню 🎸 #песнявподарок #идеяподарка #подарокмужу",
-     "Миша Бауэр · https://youtube.com/shorts/iqQ4q72fhHw"),
-    ("gulakova_u1.mp4", B, "2026-08-01T18:00:00+03:00",
-     "Хочешь довести до слёз счастья? Подари песню про вас двоих 🎶 #песнявподарок #подарок #любовь",
-     "Анастасия Гулакова · https://youtube.com/shorts/To2GrbmytGw"),
-    # ── волна 2: разгон до 5/день (30.07 → 3, 31.07 → 4, 01.08 → 5) ──────────
-    ("trofimova_u1.mp4", A, "2026-07-30T15:00:00+03:00",
-     "Когда слова заканчиваются — за дело берётся музыка 🎼 Песня про вашего человека #песнявподарок #подарок #идеяподарка",
-     "Дарья Трофимова · https://vk.ru/clip-239123228_456239040"),
-    ("charaeva_u1.mp4", B, "2026-07-31T11:00:00+03:00",
-     "Это не просто песня — это ваша история в куплетах 🎶 #песнявподарок #сюрприз #подарокдевушке",
-     "Анастасия Чараева · https://vm.tiktok.com/ZN81r2FsG/"),
-    ("zainieva_u1.mp4", A, "2026-07-31T15:00:00+03:00",
-     "Подарок, который слушают на репите 🔁 Персональная песня на заказ #песнявподарок #подарок #музыка",
-     "Наталья Зайниева · https://youtube.com/shorts/svLRFI_E0eI"),
-    ("lazev_u1.mp4", B, "2026-08-01T11:00:00+03:00",
-     "Хотел удивить — удивил до слёз 🥹 Песня в подарок работает всегда #песнявподарок #сюрприз #идеяподарка",
-     "Владислав Лазев · https://youtube.com/shorts/o2T-stKdHSs"),
-    ("gulakova2_u1.mp4", A, "2026-08-01T15:00:00+03:00",
-     "10 секунд — и мурашки 🎶 Песня, написанная про вас #песнявподарок #мурашки #подарок",
-     "Анастасия Гулакова · https://youtube.com/shorts/Ab0bQwBOP0o"),
-    ("tishchenko2_u1.mp4", B, "2026-08-01T16:30:00+03:00",
-     "Самый душевный подарок этого лета 🎁 Песня про вашего человека #песнявподарок #подарокмаме #эмоции",
-     "Татьяна Тищенко · https://vk.ru/clip-186704538_456239169"),
-    ("liliya_u1.mp4", A, "2026-08-02T12:30:00+03:00",
-     "Песня в подарок — когда хочется большего, чем букет 💐➡️🎶 #песнявподарок #идеяподарка #подарокжене",
-     "Рождественская лилия · https://vk.ru/clip627774495_456239889"),
-    ("zelenkova_u1.mp4", B, "2026-08-02T15:00:00+03:00",
-     "Ваши воспоминания, ваши имена — ваша песня 🎤 #песнявподарок #подарок #сюрприз",
-     "Анастасия Зеленкова · https://youtube.com/shorts/PLRn0RmCRhc"),
-    ("shilova_u1.mp4", A, "2026-08-02T18:00:00+03:00",
-     "Такое не забывают: песня в честь любимого человека 🎶 #песнявподарок #эмоции #подарок",
-     "Ирина Шилова · https://youtube.com/shorts/4NuOySZ0XMA"),
-]
+# темп: публикаций на аккаунт в день
+RAMP = {"2026-07-29": 2, "2026-07-30": 3, "2026-07-31": 4}
+RAMP_DEFAULT = 5
+
+# исходники: имя файла в src/ → (креатор, ссылка-источник)
+SOURCES = {
+    "mazitova": ("Регина Мазитова", "https://youtube.com/shorts/83RACeOTO4U"),
+    "tishchenko": ("Татьяна Тищенко", "https://vk.ru/clip-186704538_456239176"),
+    "arina1": ("Арина", "https://vt.tiktok.com/ZSXpCncGB/"),
+    "vahrameeva": ("Алина Вахрамеева", "https://vm.tiktok.com/ZGd9K1F9e/"),
+    "kuptsova": ("Анастасия Купцова", "https://youtu.be/UfHQ_KQJuRw"),
+    "arina2": ("Арина", "https://vt.tiktok.com/ZSXpCQkLp/"),
+    "bauer": ("Миша Бауэр", "https://youtube.com/shorts/iqQ4q72fhHw"),
+    "gulakova": ("Анастасия Гулакова", "https://youtube.com/shorts/To2GrbmytGw"),
+    "trofimova": ("Дарья Трофимова", "https://vk.ru/clip-239123228_456239040"),
+    "charaeva": ("Анастасия Чараева", "https://vm.tiktok.com/ZN81r2FsG/"),
+    "zainieva": ("Наталья Зайниева", "https://youtube.com/shorts/svLRFI_E0eI"),
+    "lazev": ("Владислав Лазев", "https://youtube.com/shorts/o2T-stKdHSs"),
+    "gulakova2": ("Анастасия Гулакова", "https://youtube.com/shorts/Ab0bQwBOP0o"),
+    "tishchenko2": ("Татьяна Тищенко", "https://vk.ru/clip-186704538_456239169"),
+    "liliya": ("Рождественская лилия", "https://vk.ru/clip627774495_456239889"),
+    "zelenkova": ("Анастасия Зеленкова", "https://youtube.com/shorts/PLRn0RmCRhc"),
+    "shilova": ("Ирина Шилова", "https://youtube.com/shorts/4NuOySZ0XMA"),
+}
+
+CAPTIONS = {
+    "mazitova": "Лучший подарок — тот, что нельзя купить в магазине 🎁 Персональная песня для вашего человека 🎶 #песнявподарок #подарок #сюрприз #идеяподарка",
+    "tishchenko": "Она услышала песню про себя и расплакалась 🥹 Песня в подарок — эмоция, которую запомнят навсегда 🎶 #песнявподарок #подароксюрприз #эмоции",
+    "arina1": "Что подарить человеку, у которого всё есть? Песню про него 🎤 #песнявподарок #идеяподарка #сюрприз",
+    "vahrameeva": "Подарок за 5 минут, а мурашки на всю жизнь 🎶 Персональная песня на заказ #песнявподарок #подарок #мурашки",
+    "kuptsova": "Такой подарок не передарят 😄 Песня, написанная специально про вашего человека 🎁 #песнявподарок #подарокдевушке #подарокмаме",
+    "arina2": "Реакция на песню про себя — бесценна 🥹🎶 Закажи песню в подарок #песнявподарок #реакция #сюрприз",
+    "bauer": "Забудь про носки и сертификаты — подари песню 🎸 #песнявподарок #идеяподарка #подарокмужу",
+    "gulakova": "Хочешь довести до слёз счастья? Подари песню про вас двоих 🎶 #песнявподарок #подарок #любовь",
+    "trofimova": "Когда слова заканчиваются — за дело берётся музыка 🎼 Песня про вашего человека #песнявподарок #подарок #идеяподарка",
+    "charaeva": "Это не просто песня — это ваша история в куплетах 🎶 #песнявподарок #сюрприз #подарокдевушке",
+    "zainieva": "Подарок, который слушают на репите 🔁 Персональная песня на заказ #песнявподарок #подарок #музыка",
+    "lazev": "Хотел удивить — удивил до слёз 🥹 Песня в подарок работает всегда #песнявподарок #сюрприз #идеяподарка",
+    "gulakova2": "10 секунд — и мурашки 🎶 Песня, написанная про вас #песнявподарок #мурашки #подарок",
+    "tishchenko2": "Самый душевный подарок этого лета 🎁 Песня про вашего человека #песнявподарок #подарокмаме #эмоции",
+    "liliya": "Песня в подарок — когда хочется большего, чем букет 💐➡️🎶 #песнявподарок #идеяподарка #подарокжене",
+    "zelenkova": "Ваши воспоминания, ваши имена — ваша песня 🎤 #песнявподарок #подарок #сюрприз",
+    "shilova": "Такое не забывают: песня в честь любимого человека 🎶 #песнявподарок #эмоции #подарок",
+}
 
 
 def load_state() -> dict:
     return json.loads(STATE.read_text()) if STATE.exists() else {}
 
 
-def post() -> None:
+def save_state(state: dict) -> None:
+    STATE.write_text(json.dumps(state, ensure_ascii=False, indent=1))
+
+
+def _acc_key(profile: str, platform: str) -> str:
+    return f"{profile}|{platform}"
+
+
+def _ramp(date_s: str) -> int:
+    return RAMP.get(date_s, RAMP_DEFAULT)
+
+
+def pick_sources(state: dict, date_s: str) -> list[tuple[str, str, str, str]]:
+    """Жадный латинский квадрат: → [(profile, platform, source, iso_datetime)].
+
+    Правила: исходник не повторяется на аккаунте; в пределах дня — сначала те,
+    что сегодня ещё не выходили; при прочих равных — наименее использованный.
+    """
+    hist = state.setdefault("acct_hist", {})
+    day = state.setdefault("days", {}).setdefault(date_s, {})
+    global_use: dict[str, int] = {}
+    for used in hist.values():
+        for s in used:
+            global_use[s] = global_use.get(s, 0) + 1
+    used_today = set(day.get("_sources", []))
+
+    now = datetime.now()
+    target = _ramp(date_s)
+    plan = []
+    for k in range(target):
+        for idx, (profile, platform) in enumerate(ACCOUNTS):
+            key = _acc_key(profile, platform)
+            if day.get(key, 0) + sum(1 for p in plan if p[0] == profile and p[1] == platform) >= target - 0:
+                continue
+            done = day.get(key, 0)
+            slot_i = done + sum(1 for p in plan if p[0] == profile and p[1] == platform)
+            if slot_i > k:
+                continue
+            if slot_i != k:
+                continue
+            cands = [s for s in SOURCES if s not in hist.get(key, [])
+                     and (SEED_DIR / "src" / f"{s}.mp4").exists()]
+            if not cands:
+                print(f"{key}: исходники кончились — слот {k + 1} пропущен")
+                continue
+            cands.sort(key=lambda s: (s in used_today, global_use.get(s, 0)))
+            src = cands[0]
+            # слоты: 10:30 / 13:00 / 15:30 / 18:00 / 20:30 + сдвиг 12 мин на аккаунт;
+            # прошедшее время двигаем вперёд от «сейчас»
+            when = datetime.strptime(date_s, "%Y-%m-%d").replace(hour=10, minute=30) \
+                + timedelta(hours=2.5 * k, minutes=12 * idx)
+            if when < now + timedelta(minutes=30):
+                when = now + timedelta(minutes=35 + 12 * idx + 90 * slot_i)
+            plan.append((profile, platform, src, when.strftime("%Y-%m-%dT%H:%M:00+03:00")))
+            used_today.add(src)
+            global_use[src] = global_use.get(src, 0) + 1
+    return plan
+
+
+def wave() -> None:
+    """Спланировать и зашедулить публикации на сегодня."""
+    sys.path.insert(0, str(Path.home() / "Desktop" / "uniq_bot"))
+    from uniquify import probe, uniquify
+
     state = load_state()
-    for fname, profile, when, caption, _src in PLAN:
-        if fname in state:
-            print(f"skip {fname} (уже отправлен)")
-            continue
-        path = SEED_DIR / "out" / fname
-        # YouTube: title ≤100 симв. — берём текст до хештегов, полная подпись в description
+    date_s = datetime.now().strftime("%Y-%m-%d")
+    plan = pick_sources(state, date_s)
+    print(f"{date_s}: к отправке {len(plan)} публикаций")
+    day = state["days"][date_s]
+    for profile, platform, src, when in plan:
+        copy = f"{src}_{SHORT[profile]}_{platform[:2]}_{date_s[5:].replace('-', '')}.mp4"
+        dst = SEED_DIR / "out" / copy
+        if not dst.exists():
+            meta = probe(str(SEED_DIR / "src" / f"{src}.mp4"))
+            asyncio.run(uniquify(str(SEED_DIR / "src" / f"{src}.mp4"), str(dst),
+                                 meta, preset="strong", mirror=False))
+        caption = CAPTIONS.get(src, next(iter(CAPTIONS.values())))
         yt_title = caption.split("#")[0].strip()
         if len(yt_title) > 100:
             yt_title = yt_title[:97].rsplit(" ", 1)[0] + "…"
-        with path.open("rb") as fh:
+        with dst.open("rb") as fh:
             r = requests.post(
                 UPLOAD_URL,
                 headers={"Authorization": f"Apikey {API_KEY}"},
-                data={"user": profile, "platform[]": PLATFORMS,
+                data={"user": profile, "platform[]": [platform],
                       "title": caption, "youtube_title": yt_title,
                       "youtube_description": caption, "scheduled_date": when},
-                files={"video": (fname, fh, "video/mp4")},
+                files={"video": (copy, fh, "video/mp4")},
                 timeout=300,
             )
         try:
             body = r.json()
         except ValueError:
-            body = {"raw": r.text[:300]}
-        print(f"{fname} -> {profile} @{when}: HTTP {r.status_code} {json.dumps(body, ensure_ascii=False)[:300]}")
+            body = {"raw": r.text[:200]}
+        print(f"{copy} -> {profile}/{platform} @{when}: HTTP {r.status_code} "
+              f"{json.dumps(body, ensure_ascii=False)[:160]}")
         if r.status_code == 429:
-            print("ЛИМИТ АПЛОАДОВ — стоп, остальное не шлём")
+            print("ЛИМИТ АПЛОАДОВ — стоп")
             break
         if r.status_code in (200, 202):
-            state[fname] = {"when": when, "profile": profile,
-                            "job_id": body.get("job_id") or body.get("request_id"),
-                            "usage": body.get("usage")}
-            STATE.write_text(json.dumps(state, ensure_ascii=False, indent=1))
+            key = _acc_key(profile, platform)
+            day[key] = day.get(key, 0) + 1
+            day.setdefault("_sources", []).append(src)
+            state.setdefault("acct_hist", {}).setdefault(key, []).append(src)
+            state.setdefault("published", {})[copy] = {
+                "when": when, "profile": profile, "platform": platform, "src": src,
+                "job_id": body.get("job_id") or body.get("request_id")}
+            save_state(state)
+    plan_sheet(state)
 
 
-def plan() -> None:
-    state = load_state()
-    rows = [["Дата (МСК)", "Профиль", "Площадки", "Файл-копия", "Исходник (креатор)",
+def plan_sheet(state: dict | None = None) -> None:
+    """Перезаписать лист «План посева» из state.published."""
+    state = state or load_state()
+    rows = [["Дата (МСК)", "Профиль", "Площадка", "Файл-копия", "Исходник (креатор)",
              "Подпись", "Статус"]]
-    for fname, profile, when, caption, src in PLAN:
-        status = "⏰ запланирован" if fname in state else "— не отправлен"
-        rows.append([when.replace("T", " ")[:16], profile, "TikTok+IG+YouTube",
-                     fname, src, caption, status])
+    pub = state.get("published", {})
+    for copy, info in sorted(pub.items(), key=lambda kv: kv[1]["when"]):
+        src = info.get("src") or copy.split("_")[0]
+        creator, url = SOURCES.get(src, ("", ""))
+        plats = info.get("platform") or "TikTok+IG+YouTube"
+        rows.append([info["when"].replace("T", " ")[:16], info["profile"], plats,
+                     copy, f"{creator} · {url}", CAPTIONS.get(src, ""), "⏰ запланирован"])
     r = requests.post(WEBHOOK, json={
         "secret": SECRET, "action": "grid_write", "sheet_id": SHEET_ID,
-        "sheet_name": PLAN_SHEET, "clear": True, "row": 1, "rows": rows,
+        "sheet_name": "План посева", "clear": True, "row": 1, "rows": rows,
     }, timeout=120)
-    print(r.status_code, r.text[:200])
+    print("план:", r.status_code, r.text[:120])
 
 
 def stats() -> None:
-    """Просмотры всех постов обоих профилей → аппенд в «Посевы (факт)» + ТГ-отчёт."""
-    from datetime import datetime
-
+    """Просмотры всех постов обоих профилей → «Посевы (факт)» + главный лист + ТГ."""
     from papkids_uploadpost import analytics, media
 
     state = load_state()
@@ -162,7 +235,7 @@ def stats() -> None:
     rows, totals = [], {A: 0, B: 0}
     # ponytail: 1 вызов media + 1 analytics на пост за прогон; при >50 постах перейти на кэш id
     for profile in (A, B):
-        for platform in PLATFORMS:
+        for platform in ("tiktok", "instagram", "youtube"):
             try:
                 posts = media(profile, platform)
             except Exception as e:  # площадка могла не отдать — не роняем весь сбор
@@ -213,7 +286,7 @@ def stats() -> None:
             f"Итого: {total}{delta}\n"
             f"Постов собрано: {len([r for r in rows if r and r[0] == today])}")
     state["_stats"] = {"date": today, "total": total}
-    STATE.write_text(json.dumps(state, ensure_ascii=False, indent=1))
+    save_state(state)
     tok, chat = ENV.get("CALLBOT_TOKEN"), ENV.get("CALLBOT_CHAT_ID")
     if tok and chat:
         requests.post(f"https://api.telegram.org/bot{tok}/sendMessage",
@@ -223,4 +296,4 @@ def stats() -> None:
 
 
 if __name__ == "__main__":
-    {"post": post, "plan": plan, "stats": stats}[sys.argv[1]]()
+    {"wave": wave, "plan": lambda: plan_sheet(), "stats": stats}[sys.argv[1]]()
