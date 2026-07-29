@@ -407,7 +407,8 @@ def stats() -> None:
             f"Постов собрано: {len([r for r in rows if r and r[0] == today])}")
     state["_stats"] = {"date": today, "total": total}
     save_state(state)
-    tok, chat = ENV.get("CALLBOT_TOKEN"), ENV.get("CALLBOT_CHAT_ID")
+    # отчёт — в личку админу через @ugc_radarbot (НЕ в чат звонков!)
+    tok, chat = ENV.get("SINGL_REPORT_BOT"), ENV.get("SINGL_SEED_CHAT_ID", "357892821")
     if tok and chat:
         requests.post(f"https://api.telegram.org/bot{tok}/sendMessage",
                       data={"chat_id": chat, "text": text,
