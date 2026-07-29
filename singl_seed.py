@@ -482,10 +482,16 @@ def daily() -> None:
     y_cre = [x for x in y_rows if not x["seed"]]
     y_seed = [x for x in y_rows if x["seed"]]
 
-    # топ-3 из свежих (за 3 дня) — «залетевшие»; если пусто, общий топ
     last3 = {(datetime.now() - timedelta(days=d)).strftime("%d.%m") for d in (0, 1, 2)}
     fresh = sorted((x for x in rows if x["date"] in last3), key=lambda x: -x["views"])[:3]
-    top = fresh or sorted(rows, key=lambda x: -x["views"])[:3]
+    top_all = sorted(rows, key=lambda x: -x["views"])[:3]
+
+    def top_lines(title, items):
+        out = [title]
+        for i, x in enumerate(items, 1):
+            who = x["creator"] or x["platform"]
+            out.append(f"{i}. {who} · {x['views']:,} — {x['url']}".replace(",", " "))
+        return out
 
     lines = [f"📊 Сингл — {datetime.now().strftime('%d.%m.%Y')}",
              f"Всего роликов: {len(rows)}",
@@ -497,10 +503,9 @@ def daily() -> None:
              f"От креаторов: {len(y_cre)} (охваты: {sum(x['views'] for x in y_cre):,})".replace(",", " "),
              f"Посевы: {len(y_seed)} (охваты: {sum(x['views'] for x in y_seed):,})".replace(",", " "),
              "",
-             "Топ-3 залетевших (за 3 дня):" if fresh else "Топ-3 за всё время:"]
-    for i, x in enumerate(top, 1):
-        who = x["creator"] or x["platform"]
-        lines.append(f"{i}. {who} · {x['views']:,} — {x['url']}".replace(",", " "))
+             *top_lines("🏆 Топ-3 за всё время:", top_all),
+             "",
+             *top_lines("🔥 Топ-3 за 3 дня:", fresh)]
     text = "\n".join(lines)
     _tg_send(text)
     print(text)
