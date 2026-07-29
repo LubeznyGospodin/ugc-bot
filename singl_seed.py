@@ -363,6 +363,7 @@ def stats() -> None:
     state = load_state()
     today = datetime.now().strftime("%d.%m.%Y")
     rows, totals = [], {A: 0, B: 0}
+    by_plat: dict[str, int] = {}
     # ponytail: 1 вызов media + 1 analytics на пост за прогон; при >50 постах перейти на кэш id
     for profile in (A, B):
         for platform in ("tiktok", "instagram", "youtube"):
@@ -383,6 +384,7 @@ def stats() -> None:
                 likes = m.get("likes") or m.get("like_count") or 0
                 comments = m.get("comments") or m.get("comments_count") or 0
                 totals[profile] += int(views or 0)
+                by_plat[platform] = by_plat.get(platform, 0) + int(views or 0)
                 rows.append([today, profile, platform, p["id"], p.get("permalink") or "",
                              views, likes, comments])
     # VK: только НАШИ залитые видео (state.vk_videos) — креаторские клипы в этих же
@@ -399,6 +401,7 @@ def stats() -> None:
                     views = it.get("views", 0) or 0
                     likes = (it.get("likes") or {}).get("count", 0)
                     totals[profile] += int(views)
+                    by_plat["vk"] = by_plat.get("vk", 0) + int(views)
                     rows.append([today, profile, "vk", it["id"],
                                  f"https://vk.com/video-{g}_{it['id']}", views, likes, 0])
             except Exception as e:  # noqa: BLE001
@@ -417,10 +420,12 @@ def stats() -> None:
     total = sum(totals.values())
     prev = (state.get("_stats") or {}).get("total", 0)
     delta = f" (+{total - prev} за сутки)" if prev else ""
+    plat_s = " · ".join(f"{k} {v}" for k, v in sorted(by_plat.items(), key=lambda x: -x[1]))
     text = (f"🌱 Посев Сингл — {today}\n"
             f"Скажи песней: {totals[A]} просмотров\n"
             f"Песня в подарок: {totals[B]} просмотров\n"
             f"Итого: {total}{delta}\n"
+            f"По площадкам: {plat_s}\n"
             f"Постов собрано: {len([r for r in rows if r and r[0] == today])}")
     state["_stats"] = {"date": today, "total": total}
     save_state(state)
