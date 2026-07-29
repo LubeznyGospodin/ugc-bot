@@ -329,9 +329,20 @@ _FETCHERS = {
 _SLOW = {"instagram", "tiktok"}
 
 
+# Наши посевные аккаунты Сингла: не жжём ScrapeCreators, просмотры по ним
+# пишет singl_seed.py stats из upload-post (строка в таблице уйдёт в «вручную»).
+_OWN_HANDLES = (
+    "singl.zvuk", "singl_zvuk", "skazhi_pesney", "skazhi.pesney",
+    "pesnya.vpodarok", "pesnya_vpodarok", "pesnya_v_podar_ok",
+)
+
+
 def fetch_reach(url: str) -> tuple[str, int | None, str | None]:
     """→ (платформа, views|None, error|None)."""
     pl = detect_platform(url)
+    low = url.lower()
+    if pl in _SLOW and any(h in low for h in _OWN_HANDLES):
+        return pl, None, "наш аккаунт — учёт через upload-post"
     fn = _FETCHERS.get(pl)
     if fn is None:
         return pl, None, "площадка не поддерживается"
