@@ -136,12 +136,21 @@ def pick_sources(state: dict, date_s: str) -> list[tuple[str, str, str, str]]:
                 continue
             if slot_i != k:
                 continue
+            today_on_acct = {p[2] for p in plan if p[0] == profile and p[1] == platform}
             cands = [s for s in SOURCES if s not in hist.get(key, [])
                      and (SEED_DIR / "src" / f"{s}.mp4").exists()]
+            if cands:
+                cands.sort(key=lambda s: (s in used_today, global_use.get(s, 0)))
+            else:
+                # исходники на аккаунте закончились — реюз: оригиналы мы не постим,
+                # каждая публикация всё равно свежая уникализация; кап 10 копий/исходник
+                acct_use = {s: hist.get(key, []).count(s) for s in SOURCES}
+                cands = [s for s in SOURCES if (SEED_DIR / "src" / f"{s}.mp4").exists()
+                         and global_use.get(s, 0) < 10 and s not in today_on_acct]
+                cands.sort(key=lambda s: (acct_use[s], s in used_today, global_use.get(s, 0)))
             if not cands:
-                print(f"{key}: исходники кончились — слот {k + 1} пропущен")
+                print(f"{key}: база исчерпана (кап 10 копий) — слот {k + 1} пропущен")
                 continue
-            cands.sort(key=lambda s: (s in used_today, global_use.get(s, 0)))
             src = cands[0]
             # слоты: 10:30 / 13:00 / 15:30 / 18:00 / 20:30 + сдвиг 12 мин на аккаунт;
             # прошедшее время двигаем вперёд от «сейчас»
