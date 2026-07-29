@@ -1,12 +1,13 @@
 """Посев Сингла: уникализированные копии топ-роликов кампании → аккаунты брендов.
 
-Схема «в разнобой»: аккаунт = профиль×площадка (6 шт: 2 бренда × TikTok/IG/YouTube).
+Схема «в разнобой»: аккаунт = профиль×площадка (8 шт: 2 бренда × TikTok/IG/YouTube/VK).
 Каждая публикация — СВОЯ уникализированная копия исходника (uniq_bot/uniquify.py,
 preset=strong, mirror=False — на роликах текст). Один исходник не повторяется на
-одном аккаунте и, пока хватает контента, не выходит дважды в один день.
+аккаунте в пределах дня; когда свежие кончились — реюз (кап 10 копий/исходник).
 
 Темп на аккаунт/день: 29.07 — 2, 30.07 — 3, 31.07 — 4, дальше — 5.
-VK (сообщества Сингла) — ждёт токен админа сообществ; добавим 4-й площадкой.
+TikTok/IG/YouTube — через upload-post (отложка scheduled_date). VK — напрямую:
+video.save в сообщество + отложенный wall.post (юзер-токен SINGL_VK_USER).
 
 Профили upload-post:
   Single1_skazhi_pesney  — «Скажи песней»   (singl.zvuk / skazhi_pesney / @skazhi.pesney)
@@ -44,7 +45,33 @@ STATE = SEED_DIR / "state.json"
 A = "Single1_skazhi_pesney"
 B = "Single_pesnya_vpodarok"
 SHORT = {A: "SP", B: "PV"}
-ACCOUNTS = [(p, pl) for p in (A, B) for pl in ("tiktok", "instagram", "youtube")]
+ACCOUNTS = [(p, pl) for p in (A, B) for pl in ("tiktok", "instagram", "youtube", "vk")]
+
+# VK — напрямую (юзер-токен админа сообществ, бессрочный): video.save + отложенный wall.post
+VK_TOKEN = ENV.get("SINGL_VK_USER", "")
+VK_GROUPS = {A: 240399977, B: 240401430}  # skazhi_pesney / pesnya.vpodarok
+
+
+def _vk(method: str, **params):
+    params.update(access_token=VK_TOKEN, v="5.199")
+    r = requests.post(f"https://api.vk.com/method/{method}", data=params, timeout=120).json()
+    if "error" in r:
+        raise RuntimeError(f"{method}: {r['error'].get('error_msg')}")
+    return r["response"]
+
+
+def vk_publish(profile: str, path: Path, caption: str, when_iso: str) -> tuple[int, int]:
+    """Залить видео в сообщество и поставить отложенный пост на стену. → (video_id, post_id)."""
+    g = VK_GROUPS[profile]
+    up = _vk("video.save", group_id=g, name=caption.split("#")[0].strip()[:100],
+             description=caption)
+    with path.open("rb") as fh:
+        vr = requests.post(up["upload_url"], files={"video_file": fh}, timeout=600).json()
+    vid = vr.get("video_id") or up["video_id"]
+    ts = int(datetime.strptime(when_iso[:16], "%Y-%m-%dT%H:%M").timestamp())
+    post = _vk("wall.post", owner_id=-g, from_group=1, message=caption,
+               attachments=f"video-{g}_{vid}", publish_date=ts)
+    return vid, post.get("post_id", 0)
 
 # темп: публикаций на аккаунт в день
 RAMP = {"2026-07-29": 2, "2026-07-30": 3, "2026-07-31": 4}
@@ -182,6 +209,23 @@ def wave() -> None:
             asyncio.run(uniquify(str(SEED_DIR / "src" / f"{src}.mp4"), str(dst),
                                  meta, preset="strong", mirror=False))
         caption = CAPTIONS.get(src, next(iter(CAPTIONS.values())))
+        if platform == "vk":
+            try:
+                vid, post_id = vk_publish(profile, dst, caption, when)
+            except Exception as e:  # noqa: BLE001
+                print(f"{copy} -> {profile}/vk @{when}: FAIL {e}")
+                continue
+            print(f"{copy} -> {profile}/vk @{when}: video-{VK_GROUPS[profile]}_{vid}, отложка {post_id}")
+            key = _acc_key(profile, platform)
+            day[key] = day.get(key, 0) + 1
+            day.setdefault("_sources", []).append(src)
+            state.setdefault("acct_hist", {}).setdefault(key, []).append(src)
+            state.setdefault("vk_videos", {}).setdefault(str(VK_GROUPS[profile]), []).append(vid)
+            state.setdefault("published", {})[copy] = {
+                "when": when, "profile": profile, "platform": "vk", "src": src,
+                "job_id": f"vk{vid}"}
+            save_state(state)
+            continue
         yt_title = caption.split("#")[0].strip()
         if len(yt_title) > 100:
             yt_title = yt_title[:97].rsplit(" ", 1)[0] + "…"
@@ -262,6 +306,25 @@ def stats() -> None:
                 totals[profile] += int(views or 0)
                 rows.append([today, profile, platform, p["id"], p.get("permalink") or "",
                              views, likes, comments])
+    # VK: только НАШИ залитые видео (state.vk_videos) — креаторские клипы в этих же
+    # сообществах уже считает бот, иначе задвоим охват
+    if VK_TOKEN:
+        for profile in (A, B):
+            g = VK_GROUPS[profile]
+            ids = state.get("vk_videos", {}).get(str(g), [])
+            if not ids:
+                continue
+            try:
+                resp = _vk("video.get", videos=",".join(f"-{g}_{v}" for v in ids))
+                for it in resp.get("items", []):
+                    views = it.get("views", 0) or 0
+                    likes = (it.get("likes") or {}).get("count", 0)
+                    totals[profile] += int(views)
+                    rows.append([today, profile, "vk", it["id"],
+                                 f"https://vk.com/video-{g}_{it['id']}", views, likes, 0])
+            except Exception as e:  # noqa: BLE001
+                print(f"vk stats {profile}: {e}")
+
     # апсерт в ГЛАВНЫЙ лист reach-таблицы: посевные просмотры идут в «Общий охват»
     # (цель кампании 2 млн). Бот эти строки не знает и не парсит — токены целы.
     label = {A: "Посев · Скажи песней", B: "Посев · Песня в подарок"}
