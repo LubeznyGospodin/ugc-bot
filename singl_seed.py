@@ -43,6 +43,21 @@ SHEET_ID = "14iH1s6bctklEuQ5kVGgjolvrP4XAKPScZkhTcz_-qRY"
 SEED_DIR = Path.home() / "Desktop" / "singl_seed"
 STATE = SEED_DIR / "state.json"
 
+# старт кампании посева: посты аккаунтов ДО этого момента — креаторские/упаковочные,
+# они уже посчитаны в таблице своими строками (иначе задвоение охвата)
+CAMPAIGN_START_UNIX = 1785294000  # 29.07.2026 08:00 МСК
+CAMPAIGN_START_ISO = "2026-07-29T05:00:00"  # то же в UTC
+
+
+def _fresh(ts) -> bool:
+    """Пост опубликован в рамках кампании (после старта посева)?"""
+    if ts in (None, ""):
+        return True  # без даты — лучше учесть, чем потерять
+    s = str(ts)
+    if s.replace(".", "").isdigit():
+        return float(s) >= CAMPAIGN_START_UNIX
+    return s[:19] >= CAMPAIGN_START_ISO
+
 A = "Single1_skazhi_pesney"
 B = "Single_pesnya_vpodarok"
 SHORT = {A: "SP", B: "PV"}
@@ -196,13 +211,24 @@ def pick_sources(state: dict, date_s: str) -> list[tuple[str, str, str, str]]:
 
 
 def seed_write(rows: list[dict]) -> None:
-    """Апсерт строк в главный лист reach-таблицы (идут в «Общий охват»)."""
+    """Апсерт строк в главный лист reach-таблицы (идут в «Общий охват»).
+
+    Apps Script изредка флачит 404 на POST — ретраим до 3 раз.
+    """
+    import time
+
     if not rows:
         return
-    r = requests.post(WEBHOOK, json={
-        "secret": SECRET, "action": "seed_write", "sheet_id": SHEET_ID, "rows": rows,
-    }, timeout=120)
-    print("seed_write:", r.status_code, r.text[:120])
+    for attempt in range(3):
+        r = requests.post(WEBHOOK, json={
+            "secret": SECRET, "action": "seed_write", "sheet_id": SHEET_ID, "rows": rows,
+        }, timeout=120)
+        if r.status_code == 200 and r.text.startswith("{"):
+            print("seed_write:", r.text[:120])
+            return
+        print(f"seed_write попытка {attempt + 1}: HTTP {r.status_code}, ретрай")
+        time.sleep(5)
+    print("seed_write: НЕ ЗАПИСАНО после 3 попыток")
 
 
 def links() -> None:
@@ -226,7 +252,7 @@ def links() -> None:
                 continue
             for p in posts:
                 pid = f"{platform}:{p['id']}"
-                if pid in seen or not p.get("permalink"):
+                if pid in seen or not p.get("permalink") or not _fresh(p.get("ts")):
                     continue
                 seen.add(pid)
                 new_rows.append({"date_added": now.strftime("%d.%m"), "creator": LABEL[profile],
@@ -346,6 +372,8 @@ def stats() -> None:
                 print(f"{profile}/{platform}: media failed: {e}")
                 continue
             for p in posts:
+                if not _fresh(p.get("ts")):
+                    continue  # старые посты канала — не наша кампания
                 try:
                     m = analytics(profile, platform, p["id"])
                 except Exception as e:
@@ -386,17 +414,6 @@ def stats() -> None:
     seen.update(f"{r[2]}:{r[3]}" for r in rows)
     state["seen_posts"] = sorted(seen)
 
-    if rows:
-        header_needed = "_stats" not in state
-        if header_needed:
-            rows.insert(0, ["Дата сбора", "Профиль", "Площадка", "ID поста", "Ссылка",
-                            "Просмотры", "Лайки", "Комменты"])
-        r = requests.post(WEBHOOK, json={
-            "secret": SECRET, "action": "grid_write", "sheet_id": SHEET_ID,
-            "sheet_name": "Посевы (факт)", "rows": rows,
-        }, timeout=120)
-        print("sheet:", r.status_code, r.text[:120])
-
     total = sum(totals.values())
     prev = (state.get("_stats") or {}).get("total", 0)
     delta = f" (+{total - prev} за сутки)" if prev else ""
@@ -417,4 +434,10 @@ def stats() -> None:
 
 
 if __name__ == "__main__":
+    import fcntl
+
+    # один процесс за раз: wave/links/stats делают read-modify-write state.json,
+    # параллельный запуск терял записи (29.07 потеряли 2 vk-поста)
+    _lock = (SEED_DIR / ".lock").open("w")
+    fcntl.flock(_lock, fcntl.LOCK_EX)
     {"wave": wave, "plan": lambda: plan_sheet(), "stats": stats, "links": links}[sys.argv[1]]()
