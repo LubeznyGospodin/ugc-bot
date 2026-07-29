@@ -438,6 +438,74 @@ def stats() -> None:
     print(text)
 
 
+def _tg_send(text: str) -> None:
+    tok, chat = ENV.get("SINGL_REPORT_BOT"), ENV.get("SINGL_SEED_CHAT_ID", "357892821")
+    if tok and chat:
+        requests.post(f"https://api.telegram.org/bot{tok}/sendMessage",
+                      data={"chat_id": chat, "text": text,
+                            "disable_web_page_preview": "true"}, timeout=60)
+
+
+def daily() -> None:
+    """Утренний сводный отчёт по кампании (launchd 10:10, после reach_run 10:00)."""
+    import time
+
+    for _ in range(3):  # Apps Script изредка флачит 404
+        r = requests.post(WEBHOOK, json={"secret": SECRET, "action": "grid_dump",
+                                         "sheet_id": SHEET_ID}, timeout=120)
+        if r.status_code == 200 and r.text.startswith("{"):
+            break
+        time.sleep(5)
+    values = r.json()["values"][2:]  # строки 1-2 — сводка/шапка
+
+    def num(v):
+        try:
+            return int(float(str(v).replace(" ", "").replace("\xa0", "")))
+        except ValueError:
+            return 0
+
+    def norm_date(v):
+        s = str(v).strip()
+        if "T" in s and s[:4].isdigit():  # Sheets отдаёт даты ISO в UTC (МСК-3)
+            return (datetime.fromisoformat(s.replace("Z", "+00:00"))
+                    + timedelta(hours=3)).strftime("%d.%m")
+        return s
+
+    rows = [{"date": norm_date(v[0]), "creator": str(v[1]).strip(),
+             "platform": str(v[2]).strip(), "url": str(v[3]).strip(),
+             "views": num(v[4]), "seed": "посев" in str(v[6]).lower() or str(v[1]).startswith("Посев")}
+            for v in values if len(v) >= 7 and str(v[3]).strip().startswith("http")]
+
+    total_views = sum(x["views"] for x in rows)
+    yest = (datetime.now() - timedelta(days=1)).strftime("%d.%m")
+    y_rows = [x for x in rows if x["date"] == yest]
+    y_cre = [x for x in y_rows if not x["seed"]]
+    y_seed = [x for x in y_rows if x["seed"]]
+
+    # топ-3 из свежих (за 3 дня) — «залетевшие»; если пусто, общий топ
+    last3 = {(datetime.now() - timedelta(days=d)).strftime("%d.%m") for d in (0, 1, 2)}
+    fresh = sorted((x for x in rows if x["date"] in last3), key=lambda x: -x["views"])[:3]
+    top = fresh or sorted(rows, key=lambda x: -x["views"])[:3]
+
+    lines = [f"📊 Сингл — {datetime.now().strftime('%d.%m.%Y')}",
+             f"Всего роликов: {len(rows)}",
+             f"Общий охват: {total_views:,}".replace(",", " "),
+             "",
+             f"Роликов опубликовано за вчера: {len(y_rows)}",
+             "",
+             "Из них:",
+             f"От креаторов: {len(y_cre)} (охваты: {sum(x['views'] for x in y_cre):,})".replace(",", " "),
+             f"Посевы: {len(y_seed)} (охваты: {sum(x['views'] for x in y_seed):,})".replace(",", " "),
+             "",
+             "Топ-3 залетевших (за 3 дня):" if fresh else "Топ-3 за всё время:"]
+    for i, x in enumerate(top, 1):
+        who = x["creator"] or x["platform"]
+        lines.append(f"{i}. {who} · {x['views']:,} — {x['url']}".replace(",", " "))
+    text = "\n".join(lines)
+    _tg_send(text)
+    print(text)
+
+
 if __name__ == "__main__":
     import fcntl
 
@@ -445,4 +513,5 @@ if __name__ == "__main__":
     # параллельный запуск терял записи (29.07 потеряли 2 vk-поста)
     _lock = (SEED_DIR / ".lock").open("w")
     fcntl.flock(_lock, fcntl.LOCK_EX)
-    {"wave": wave, "plan": lambda: plan_sheet(), "stats": stats, "links": links}[sys.argv[1]]()
+    {"wave": wave, "plan": lambda: plan_sheet(), "stats": stats, "links": links,
+     "daily": daily}[sys.argv[1]]()
