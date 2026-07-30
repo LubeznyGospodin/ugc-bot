@@ -22,7 +22,7 @@ from sqlalchemy import select
 
 from bot.config import settings
 from bot.database import get_session
-from bot.keyboards import single_accept_keyboard, single_submit_keyboard
+from bot.keyboards import deadline_push_keyboard, wave2_date_keyboard
 from bot.models import AppState, CachedApplication, ReachRow, SinglePipeline
 
 logger = logging.getLogger(__name__)
@@ -117,6 +117,124 @@ BAD_PAYMENT_TEXT = (
     "Не увидел номер телефона 🙈 Пришли, пожалуйста, номер телефона и банк одним сообщением, "
     "например: <code>89991234567 Сбербанк</code>."
 )
+
+
+# ── Вторая волна: перезалив старого ролика + новый ─────────────────────────────
+WAVE2_BOT = "@video_zhora_bot"
+
+
+def _g(name: str | None, verb: str) -> str:
+    """Глагол прошедшего времени по полу из имени: «сделал» → «сделал» / «сделала» /
+    «сделал(а)», если пол не определился. Определялка общая с карточками (bot.cards)."""
+    from bot.cards import guess_gender
+
+    return verb + {"female": "а", "male": ""}.get(guess_gender(name) or "", "(а)")
+
+
+def wave2_text(name: str | None) -> str:
+    """Оффер 2-й волны. Имя — только первое слово из «Имя» в таблице."""
+    first = (name or "").strip().split()[0] if (name or "").strip() else ""
+    hello = (f"Привет, {first}!" if first else "Привет!") + " Я по проекту «Сингл» от ЗВУКа."
+    return (
+        f"{hello}\n\n"
+        f"Ты {_g(name, 'сделал')} классный ролик, но он, к сожалению, собрал незаслуженно "
+        "мало охватов.\n\n"
+        "Я хочу попросить тебя опубликовать его ещё раз и сделать ещё один — более мощный "
+        "и креативный ролик.\n\n"
+        "💰 Мы заплатим <b>50 ₽ за каждые 1000 просмотров</b>, но не больше 500 тыс. "
+        "То есть можно заработать <b>25 тыс. с ролика</b>.\n\n"
+        f"Но это не главное. Главное — я дам тебе <b>бесплатный доступ</b> к этому боту: {WAVE2_BOT} — "
+        "он технически уникализирует ролики, чтобы их можно было безопасно перевыкладывать и "
+        "собирать охваты! Сможешь использовать и для своих целей 😉\n\n"
+        "Идёт?"
+    )
+
+
+WAVE2_ASK_DATE = (
+    "🔥 Отлично!\n\n"
+    "Можешь, пожалуйста, написать дату, когда опубликуешь новые посты? "
+    "Формат <b>ДД.ММ</b> (например, 05.08).\n\n"
+    "И вот дублирую форматы и требования к ролику, чтобы тебе не искать:\n"
+    f'📄 <a href="{_LINK_FORMATS}">Форматы и идеи сценариев</a>'
+)
+WAVE2_STILL_ON_TEXT = "Отлично, ждём 💪"
+
+
+def wave2_no_text(name: str | None) -> str:
+    return f"Понял, спасибо, что {_g(name, 'ответил')} 🙏 Если передумаешь — просто напиши сюда."
+
+
+def wave2_drop_text(name: str | None) -> str:
+    return f"Принято, снимаю с этой волны. Спасибо, что {_g(name, 'предупредил')} 🙏"
+
+
+def wave2_accepted_text(dl: date) -> str:
+    return (
+        f"Записал: публикуешь <b>{dl.strftime('%d.%m')}</b> 🚀\n\n"
+        f"Не забудь: доступ к {WAVE2_BOT} для уникализации — за тобой.\n"
+        "Как выложишь — пришли сюда ссылки на посты, учтём охваты."
+    )
+
+
+async def wave2_audience() -> list[tuple[int, str]]:
+    """Кому слать 2-ю волну: участники «Сингл», у кого в листе «Отклики» заполнена
+    колонка «Ссылка на ролик» (кол. L) — т.е. они уже сделали ролик.
+    → [(chat_id, имя)]."""
+    from bot.models import Creator
+
+    async with get_session() as s:
+        apps = (await s.execute(select(CachedApplication))).scalars().all()
+        creators = {c.tg_id: c for c in (await s.execute(select(Creator))).scalars().all()}
+    seen: dict[int, str] = {}
+    for a in apps:
+        if not is_single(a.brand_title) or not (a.video or "").strip():
+            continue
+        c = creators.get(a.chat_id)
+        # Имя: сперва из строки отклика (там оно есть даже у заведённых руками),
+        # иначе — из анкеты в боте.
+        name = (a.name or "").strip() or ((getattr(c, "full_name", None) or "") if c else "")
+        seen.setdefault(a.chat_id, name)
+    return list(seen.items())
+
+
+async def ensure_pipeline(chat_id: int, full_name: str | None = None, telegram: str | None = None) -> SinglePipeline:
+    """Строка пайплайна для креатора. Часть участников 1-й волны заводилась вручную в
+    таблице — записи в БД у них нет, поэтому создаём при первом касании 2-й волны."""
+    async with get_session() as s:
+        p = (await s.execute(select(SinglePipeline).where(SinglePipeline.chat_id == chat_id))).scalar_one_or_none()
+        if p is None:
+            p = SinglePipeline(chat_id=chat_id, full_name=full_name, telegram=telegram,
+                               stage="submitted", updated_at=datetime.utcnow())
+            s.add(p)
+            await s.commit()
+            await s.refresh(p)
+        return p
+
+
+async def set_wave2(chat_id: int, status: str, dl: date | None = None) -> None:
+    await ensure_pipeline(chat_id)
+    async with get_session() as s:
+        p = (await s.execute(select(SinglePipeline).where(SinglePipeline.chat_id == chat_id))).scalar_one_or_none()
+        if p:
+            p.wave2_status = status
+            if status == "go" and dl is None:
+                p.wave2_go_at = datetime.utcnow()  # точка отсчёта пинков «напиши дату»
+                p.wave2_nudges = 0
+            if dl is not None:
+                p.wave2_deadline = dl
+                p.wave2_reminded = False
+            p.updated_at = datetime.utcnow()
+            await s.commit()
+
+
+async def mark_dropped(chat_id: int) -> None:
+    """1-я волна: «не буду участвовать» — снимаем с дожима (луп шлёт только producing)."""
+    async with get_session() as s:
+        p = (await s.execute(select(SinglePipeline).where(SinglePipeline.chat_id == chat_id))).scalar_one_or_none()
+        if p:
+            p.stage = "dropped"
+            p.updated_at = datetime.utcnow()
+            await s.commit()
 
 
 # ── Парсер даты ───────────────────────────────────────────────────────────────
@@ -420,18 +538,89 @@ async def _remind_creators(bot: Bot) -> None:
                         p.chat_id,
                         f"🔔 Напоминание: завтра ({p.deadline.strftime('%d.%m')}) дедлайн по ролику для «Сингл». "
                         "Успеваешь? Как выложишь — жми «📹 Отправить ссылки на ролик».",
-                        reply_markup=single_submit_keyboard(),
+                        reply_markup=deadline_push_keyboard(1),
                     )
                     p.reminded_before = True
                 elif p.deadline <= today and not p.reminded_due:
                     await bot.send_message(
                         p.chat_id,
                         f"⏰ Сегодня ({p.deadline.strftime('%d.%m')}) срок по ролику «Сингл». Ждём ссылки на посты 🙏",
-                        reply_markup=single_submit_keyboard(),
+                        reply_markup=deadline_push_keyboard(1),
                     )
                     p.reminded_due = True
             except Exception as e:  # noqa: BLE001
                 logger.info("single remind %s failed: %s", p.chat_id, e)
+        await s.commit()
+
+
+# Пинки тем, кто нажал «Погнали», но дату так и не написал: через час, потом ещё через 6.
+WAVE2_NUDGE_HOURS = (1, 6)
+WAVE2_NUDGE_COUNT = len(WAVE2_NUDGE_HOURS)
+
+
+def wave2_nudge_text(n: int, name: str | None) -> str:
+    if n == 0:
+        return (
+            f"🙌 Ты {_g(name, 'сказал')} «погнали» по 2-й волне «Сингла» — не хватает только даты.\n\n"
+            "Напиши, пожалуйста, когда опубликуешь новые посты, в формате <b>ДД.ММ</b> (например, 05.08)."
+        )
+    return (
+        "📅 Всё ещё жду дату по 2-й волне «Сингла» — без неё не могу поставить тебя в план.\n\n"
+        f"Напиши в формате <b>ДД.ММ</b> (например, 05.08). Если {_g(name, 'передумал')} — тоже скажи, это ок."
+    )
+
+
+async def _nudge_wave2(bot: Bot) -> None:
+    """Нажал «Погнали», но дату не прислал → пинок через 1 час, затем ещё через 6 часов."""
+    now = datetime.utcnow()
+    async with get_session() as s:
+        rows = (await s.execute(
+            select(SinglePipeline).where(
+                SinglePipeline.wave2_status == "go",
+                SinglePipeline.wave2_deadline.is_(None),
+                SinglePipeline.wave2_go_at.is_not(None),
+            )
+        )).scalars().all()
+        for p in rows:
+            n = p.wave2_nudges or 0
+            if n >= WAVE2_NUDGE_COUNT:
+                continue
+            # Отсчёт от «Погнали» для первого пинка, от предыдущего пинка — для второго.
+            due = p.wave2_go_at + timedelta(hours=sum(WAVE2_NUDGE_HOURS[: n + 1]))
+            if now < due:
+                continue
+            try:
+                await bot.send_message(p.chat_id, wave2_nudge_text(n, p.full_name),
+                                       reply_markup=wave2_date_keyboard())
+                p.wave2_nudges = n + 1
+            except Exception as e:  # noqa: BLE001
+                logger.info("wave2 nudge %s failed: %s", p.chat_id, e)
+        await s.commit()
+
+
+async def _remind_wave2(bot: Bot) -> None:
+    """2-я волна: напоминание за день до заявленной даты публикации."""
+    today = (datetime.utcnow() + MSK).date()
+    async with get_session() as s:
+        rows = (await s.execute(
+            select(SinglePipeline).where(
+                SinglePipeline.wave2_status == "go",
+                SinglePipeline.wave2_deadline == today + timedelta(days=1),
+                SinglePipeline.wave2_reminded.is_(False),
+            )
+        )).scalars().all()
+        for p in rows:
+            try:
+                await bot.send_message(
+                    p.chat_id,
+                    f"🔔 Напоминание: завтра ({p.wave2_deadline.strftime('%d.%m')}) ты обещал(а) выложить "
+                    "новые посты по «Синглу» — перезалив старого ролика и новый.\n\n"
+                    f"Уникализировать ролики можно в {WAVE2_BOT}. Всё в силе?",
+                    reply_markup=deadline_push_keyboard(2),
+                )
+                p.wave2_reminded = True
+            except Exception as e:  # noqa: BLE001
+                logger.info("wave2 remind %s failed: %s", p.chat_id, e)
         await s.commit()
 
 
@@ -475,6 +664,8 @@ async def run_single_loop(bot: Bot, interval: int = 600) -> None:
     while True:
         try:
             await _remind_creators(bot)
+            await _nudge_wave2(bot)
+            await _remind_wave2(bot)
             await _daily_report(bot)
         except Exception as e:  # noqa: BLE001
             logger.warning("single loop error: %s", e)

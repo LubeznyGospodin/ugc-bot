@@ -257,6 +257,37 @@ def single_submit_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def wave2_offer_keyboard() -> InlineKeyboardMarkup:
+    """Кнопки под оффером 2-й волны (перезалив + новый ролик)."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(text="🚀 Погнали", callback_data="w2:go"),
+            InlineKeyboardButton(text="Не интересно", callback_data="w2:no"),
+        ]]
+    )
+
+
+def wave2_date_keyboard() -> InlineKeyboardMarkup:
+    """Кнопка возврата к вводу даты 2-й волны (FSM мог сброситься другим диалогом)."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="📅 Написать дату", callback_data="w2:date")]]
+    )
+
+
+def deadline_push_keyboard(wave: int) -> InlineKeyboardMarkup:
+    """Клавиатура напоминания о дедлайне. wave=1 — первая волна (+ кнопка сдачи ссылок),
+    wave=2 — вторая. «Всё в силе» / «Не буду участвовать» есть в обеих."""
+    prefix = "single" if wave == 1 else "w2"
+    rows = []
+    if wave == 1:
+        rows.append([InlineKeyboardButton(text="📹 Отправить ссылки на ролик", callback_data="single:submit")])
+    rows.append([
+        InlineKeyboardButton(text="✅ Всё в силе", callback_data=f"{prefix}:still_on"),
+        InlineKeyboardButton(text="❌ Не буду участвовать", callback_data=f"{prefix}:drop"),
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def broadcast_confirm_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[

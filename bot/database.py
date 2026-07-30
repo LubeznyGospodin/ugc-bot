@@ -40,6 +40,10 @@ async def init_db() -> None:
     await _add_column_if_missing("creators", "site_queued", "BOOLEAN DEFAULT FALSE")
     # Видео перезалито с корректными размерами+обложкой → не нормализуем повторно.
     await _add_column_if_missing("creator_works", "normalized", "BOOLEAN DEFAULT FALSE")
+    # Подтверждённые размеры видео — без них в альбом не отправляем (защита от квадратов).
+    await _add_column_if_missing("creator_works", "vw", "INTEGER")
+    await _add_column_if_missing("creator_works", "vh", "INTEGER")
+    await _add_column_if_missing("creator_works", "too_big", "BOOLEAN DEFAULT FALSE")
     # Расширяем age до TEXT: креаторы вводят «Возраст» свободно, varchar(16) ронял синк.
     await _alter_column_type("creators", "age", "TEXT")
     # Пуш-напоминание незарегистрированным: когда отправили (NULL — не слали).
@@ -50,9 +54,16 @@ async def init_db() -> None:
     await _add_column_if_missing("single_pipeline", "payment_phone", "VARCHAR(64)")
     await _add_column_if_missing("single_pipeline", "payment_bank", "TEXT")
     await _add_column_if_missing("single_pipeline", "payment_at", "TIMESTAMP")
+    # Вторая волна «Сингл» (перезалив + новый ролик): статус, срок, флаг напоминания.
+    await _add_column_if_missing("single_pipeline", "wave2_status", "VARCHAR(16)")
+    await _add_column_if_missing("single_pipeline", "wave2_deadline", "DATE")
+    await _add_column_if_missing("single_pipeline", "wave2_reminded", "BOOLEAN DEFAULT FALSE")
+    await _add_column_if_missing("single_pipeline", "wave2_go_at", "TIMESTAMP")
+    await _add_column_if_missing("single_pipeline", "wave2_nudges", "INTEGER DEFAULT 0")
     # Зеркало колонок «Подтвердил»/«Ссылка на ролик» в кэше откликов — для воронки «Сингл».
     await _add_column_if_missing("cached_applications", "confirmed", "VARCHAR(16)")
     await _add_column_if_missing("cached_applications", "video", "TEXT")
+    await _add_column_if_missing("cached_applications", "name", "VARCHAR(255)")
     # Дата первого сбора охвата — для заморозки старых роликов.
     await _add_column_if_missing("reach_rows", "first_seen", "TIMESTAMP")
     # Охват вписан руками в таблице → не парсим и не перезаписываем.

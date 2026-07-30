@@ -51,50 +51,65 @@ MAX_DL = 20 * 1024 * 1024  # Bot API качает file_id только до 20М
 
 
 async def _video_ids(bot: Bot, works: list) -> list[str]:
-    """file_id работ, готовые к альбому: КАЖДОЕ видео перезаливаем с корректными размерами
-    (ffprobe, не квадрат) + обложкой (ffmpeg, не чёрная), новый file_id кэшируем в БД (флаг
-    normalized). Нормализуем ВСЕ, а не только document: Telegram у исходного video-file_id
-    часто держит кривые (320×320) метаданные даже для портретного файла → квадрат в альбоме.
-    Уже normalized → отдаём как есть. >20МБ Bot API не скачает → отдаём оригинал (редко)."""
+    """file_id работ, ГОТОВЫЕ к альбому.
+
+    ТВЁРДОЕ ПРАВИЛО (docs/CHANNEL_POSTING.md, нарушалось 3 раза):
+    видео уходит админу/в канал ТОЛЬКО с ПОДТВЕРЖДЁННЫМИ размерами (vw/vh из ffprobe,
+    vw != vh). Не смогли подтвердить — видео НЕ отправляем вообще. Лучше меньше видео,
+    чем сплющенный квадрат: Telegram у исходных file_id часто держит кривые (320×320)
+    метаданные даже для портретного файла, и раньше любой сбой нормализации (>20МБ,
+    ошибка сети, неудачный перезалив) молча пропускал такой оригинал в альбом.
+
+    Нормализация = скачать → H.264+faststart (иначе VP9/HEVC не играют) → обложка с 1-й
+    секунды (не чёрная) → перезалить с width/height/duration → сохранить vw/vh в БД.
+    """
     out: list[str] = []
     for w in works[:MAX_VIDEOS]:
         if not w.file_id:
             continue
-        if w.normalized:  # уже перезалито корректно
+        # Уже перезалито нами и размеры подтверждены (и это не квадрат) — берём.
+        if w.normalized and w.vw and w.vh and w.vw != w.vh:
             out.append(w.file_id)
             continue
         try:
             f = await bot.get_file(w.file_id)
-        except Exception:  # noqa: BLE001
-            out.append(w.file_id)
+        except Exception as e:  # noqa: BLE001
+            # Чаще всего «file is too big» (>20МБ) — Bot API такое не качает.
+            logger.warning("work %s: не получить файл (%s) → видео НЕ отправляем", w.id, e)
+            await _mark_work(w.id, too_big=True)
             continue
         if (f.file_size or 0) > MAX_DL:
-            logger.warning("work %s: >20МБ, не нормализуем (нужен Telethon)", w.id)
-            out.append(w.file_id)
+            logger.warning("work %s: >20МБ → видео НЕ отправляем (нужен Telethon)", w.id)
+            await _mark_work(w.id, too_big=True)
             continue
         try:
             data = (await bot.download_file(f.file_path)).read()
-            # ТВЁРДОЕ ПРАВИЛО (docs/CHANNEL_POSTING.md): H.264 (иначе VP9/HEVC не играют) +
-            # обложка (не чёрная) + размеры (не квадрат).
             with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tf:
                 tf.write(data)
                 tmp = tf.name
             conv = tmp + ".h264.mp4"  # ВНИМАНИЕ: не «out» — там аккумулятор file_id
             try:
                 if to_playable_mp4(tmp, conv):
-                    data = open(conv, "rb").read()  # H.264 + faststart
+                    data = open(conv, "rb").read()
                     src = conv
                 else:
-                    src = tmp  # фолбэк: исходник как есть
+                    src = tmp
                 dur, vw, vh = probe_dims(src)
                 thumb = make_thumb(src)
             finally:
                 for _p in (tmp, conv):
                     if os.path.exists(_p):
                         os.unlink(_p)
-            kwargs: dict = {"supports_streaming": True, "disable_notification": True}
-            if vw and vh:
-                kwargs.update(width=vw, height=vh, duration=dur)
+            # Размеры не определились или квадрат — НЕ отправляем (правило).
+            if not vw or not vh or vw == vh:
+                logger.error("work %s: размеры %sx%s не годятся → видео НЕ отправляем",
+                             w.id, vw, vh)
+                await _mark_work(w.id, vw=vw or None, vh=vh or None)
+                continue
+            kwargs: dict = {
+                "supports_streaming": True, "disable_notification": True,
+                "width": vw, "height": vh, "duration": dur,
+            }
             if thumb:
                 kwargs["thumbnail"] = BufferedInputFile(thumb, "t.jpg")
             stash = _stash_chat()
@@ -104,20 +119,23 @@ async def _video_ids(bot: Bot, works: list) -> list[str]:
                 await bot.delete_message(stash, m.message_id)
             except Exception:  # noqa: BLE001
                 pass
-            if vid:
-                async with get_session() as s:
-                    ww = await s.get(CreatorWork, w.id)
-                    if ww:
-                        ww.file_id = vid
-                        ww.normalized = True
-                        await s.commit()
-                out.append(vid)
-            else:
-                out.append(w.file_id)
+            if not vid:
+                logger.error("work %s: перезалив без video → НЕ отправляем", w.id)
+                continue
+            await _mark_work(w.id, file_id=vid, normalized=True, vw=vw, vh=vh, too_big=False)
+            out.append(vid)
         except Exception as e:  # noqa: BLE001
-            logger.warning("normalize work %s failed: %s", w.id, e)
-            out.append(w.file_id)
+            logger.warning("normalize work %s failed: %s → видео НЕ отправляем", w.id, e)
     return out
+
+
+async def _mark_work(work_id: int, **fields) -> None:
+    async with get_session() as s:
+        w = await s.get(CreatorWork, work_id)
+        if w:
+            for k, v in fields.items():
+                setattr(w, k, v)
+            await s.commit()
 
 
 async def _load(tg_id: int):
@@ -230,7 +248,8 @@ async def import_from_cloud(bot: Bot, tg_id: int) -> tuple[int, int]:
                 pos += 1
                 async with get_session() as s:
                     s.add(CreatorWork(tg_id=tg_id, project="base", file_id=fid,
-                                      source="cloud", position=pos, normalized=True))
+                                      source="cloud", position=pos, normalized=True,
+                                      vw=w or None, vh=h or None))
                     await s.commit()
                 nvd += 1
         except Exception as e:  # noqa: BLE001
@@ -250,11 +269,12 @@ async def send_placement_prompt(bot: Bot, tg_id: int) -> None:
     # incomplete — не блокирует: креатор мог дослать медиа, проверяем заново.
     if not creator or creator.placement in ("pending", "placed", "rejected"):
         return
-    vids = [w for w in works if w.file_id]
+    # Годные видео — только те, что прошли нормализацию (размеры подтверждены).
+    vids = await _video_ids(bot, works)
     if len(photos) < MIN_PHOTOS or len(vids) < MIN_VIDEOS:
         await import_from_cloud(bot, tg_id)  # добираем из облачной ссылки анкеты
         creator, photos, works = await _load(tg_id)
-        vids = [w for w in works if w.file_id]
+        vids = await _video_ids(bot, works)
     if len(photos) < MIN_PHOTOS or len(vids) < MIN_VIDEOS:
         # Неполный комплект — админа не дёргаем, помечаем и ждём догрузки.
         await _set(tg_id, placement="incomplete")
@@ -262,7 +282,9 @@ async def send_placement_prompt(bot: Bot, tg_id: int) -> None:
         if len(photos) < MIN_PHOTOS:
             need.append(f"фото {len(photos)}/{MIN_PHOTOS}")
         if len(vids) < MIN_VIDEOS:
-            need.append(f"видео {len(vids)}/{MIN_VIDEOS}")
+            big = sum(1 for w in works if getattr(w, "too_big", False))
+            note = f" (из них {big} >20МБ — нужна догрузка)" if big else ""
+            need.append(f"видео {len(vids)}/{MIN_VIDEOS}{note}")
         logger.info("placement %s: не хватает контента (%s)", tg_id, ", ".join(need))
         try:
             await sheets_client.content_status(tg_id, "не хватает: " + ", ".join(need))
@@ -271,7 +293,6 @@ async def send_placement_prompt(bot: Bot, tg_id: int) -> None:
         return
 
     ph = photos[:MAX_PHOTOS]
-    vids = await _video_ids(bot, works)  # нормализуем document→video (и кэшируем)
     # Альбом-превью ровно того, что уйдёт в канал — админ видит контент и решает.
     media: list = [InputMediaPhoto(media=p.file_id) for p in ph]
     media += [InputMediaVideo(media=v) for v in vids]

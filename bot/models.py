@@ -137,6 +137,9 @@ class SinglePipeline(Base):
     wave2_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     wave2_deadline: Mapped[date | None] = mapped_column(Date, nullable=True)
     wave2_reminded: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Когда нажал «Погнали» и сколько пинков «напиши дату» уже ушло (+1ч, потом +6ч).
+    wave2_go_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    wave2_nudges: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -190,6 +193,9 @@ class CachedApplication(Base):
     # varchar(16) ронял весь sync_applications с value too long.
     confirmed: Mapped[str | None] = mapped_column(Text, nullable=True)  # «Подтвердил участие»
     video: Mapped[str | None] = mapped_column(Text, nullable=True)  # «Ссылка на ролик»
+    # Имя из строки отклика — обращение в рассылках по участникам проекта («Привет, Имя»),
+    # когда анкеты в боте нет (участника заводили в таблицу руками).
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     synced_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -233,6 +239,13 @@ class CreatorWork(Base):
     # заменён, повторно не нормализуем. Telegram у исходных file_id часто хранит кривые
     # (квадратные) метаданные даже для портретного файла — отсюда квадрат в альбоме.
     normalized: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Подтверждённые размеры видео (ffprobe в момент перезалива). ТВЁРДОЕ ПРАВИЛО: в альбом
+    # идёт только видео с vw/vh > 0 и vw != vh — иначе получаем сплющенный квадрат.
+    # NULL → размеры неизвестны, видео НЕ отправляем (см. docs/CHANNEL_POSTING.md).
+    vw: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    vh: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Видео >20МБ: Bot API его не скачает → нормализовать нечем, нужна догрузка Telethon.
+    too_big: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class ProjectMember(Base):

@@ -49,6 +49,7 @@ class SingleFSM(StatesGroup):
     waiting_links = State()
     waiting_payment = State()
     waiting_extra_links = State()  # «добавить ещё ссылку» из «Мои проекты»
+    waiting_wave2_date = State()  # 2-я волна: дата публикации новых постов
 
 
 class AddVideoFSM(StatesGroup):

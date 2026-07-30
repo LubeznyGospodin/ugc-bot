@@ -32,6 +32,7 @@ from bot.models import Creator
 from bot.sheets import SheetsError, sheets_client
 from bot.states import AddVideoFSM, AnnounceFSM, BroadcastFSM
 from bot.utils.chat_cleanup import render_screen
+from bot.single import wave2_audience
 from bot.utils.db_helpers import count_creators, funnel_stats
 from bot.utils.export import export_creators_xlsx, export_unregistered_xlsx, export_visits_xlsx
 
@@ -205,6 +206,100 @@ async def admin_broadcast_send(call: CallbackQuery, state: FSMContext, bot: Bot)
     )
 
 
+# ── Рассылка 2-й волны «Сингл» ────────────────────────────────────────────────
+@router.message(Command("wave2"))
+async def wave2_preview(message: Message, bot: Bot):
+    """Превью рассылки 2-й волны: кому уйдёт + текст. Отправка — по кнопке."""
+    if not _admin_only(message.from_user.id):
+        return
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    from bot.single import wave2_text
+
+    aud = await wave2_audience()
+    if not aud:
+        await message.answer("Некому: нет откликов «Сингл» со ссылкой на ролик (колонка L).")
+        return
+    names = ", ".join(n or str(cid) for cid, n in aud)
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text=f"✅ Отправить ({len(aud)})", callback_data="admin:wave2_send"),
+        InlineKeyboardButton(text="❌ Отмена", callback_data="admin:wave2_cancel"),
+    ]])
+    await message.answer(
+        f"🌊 <b>2-я волна «Сингл»</b> — {len(aud)} чел.\n\n{names}\n\n"
+        f"Текст (пример подстановки имени):\n———\n{wave2_text(aud[0][1])}\n———",
+        reply_markup=kb, disable_web_page_preview=True,
+    )
+
+
+@router.message(Command("wave2_test"))
+async def wave2_test(message: Message, bot: Bot):
+    """Прогон 2-й волны на себе: тот же оффер и те же кнопки, что уйдут креаторам.
+    Строки отклика у админа обычно нет — тогда дата в столбец Q не пишется, это ок."""
+    if not _admin_only(message.from_user.id):
+        return
+    from bot.keyboards import wave2_offer_keyboard
+    from bot.single import ensure_pipeline, set_wave2, wave2_text
+
+    name = message.from_user.first_name or ""
+    await ensure_pipeline(message.from_user.id, name)
+    await bot.send_message(message.chat.id, wave2_text(name), reply_markup=wave2_offer_keyboard())
+    await set_wave2(message.from_user.id, "sent")
+
+
+@router.message(Command("wave2_nudge_now"))
+async def wave2_nudge_now(message: Message, bot: Bot):
+    """Тест пинков: отматывает твой «Погнали» на 7 часов назад и гоняет луп пинков сразу."""
+    if not _admin_only(message.from_user.id):
+        return
+    from datetime import datetime, timedelta
+
+    from bot.models import SinglePipeline
+    from bot.single import _nudge_wave2
+
+    async with get_session() as s:
+        p = (await s.execute(
+            select(SinglePipeline).where(SinglePipeline.chat_id == message.from_user.id)
+        )).scalar_one_or_none()
+        if p is None or p.wave2_status != "go" or p.wave2_deadline is not None:
+            await message.answer("Сначала /wave2_test → «Погнали» и НЕ пиши дату.")
+            return
+        p.wave2_go_at = datetime.utcnow() - timedelta(hours=7)
+        await s.commit()
+    await _nudge_wave2(bot)
+    await message.answer("Прогнал луп пинков (сдвинул время на -7ч). Повтори команду для второго пинка.")
+
+
+@router.callback_query(F.data == "admin:wave2_cancel")
+async def wave2_cancel(call: CallbackQuery):
+    await call.answer("Отменено")
+    await call.message.edit_reply_markup(reply_markup=None)
+
+
+@router.callback_query(F.data == "admin:wave2_send")
+async def wave2_send(call: CallbackQuery, bot: Bot):
+    if not _admin_only(call.from_user.id):
+        await call.answer("Недоступно", show_alert=True)
+        return
+    from bot.keyboards import wave2_offer_keyboard
+    from bot.single import ensure_pipeline, set_wave2, wave2_text
+
+    await call.answer("Рассылаю...")
+    await call.message.edit_reply_markup(reply_markup=None)
+    sent, failed = 0, 0
+    for chat_id, name in await wave2_audience():
+        try:
+            await ensure_pipeline(chat_id, name)
+            await bot.send_message(chat_id, wave2_text(name), reply_markup=wave2_offer_keyboard())
+            await set_wave2(chat_id, "sent")
+            sent += 1
+        except Exception as e:  # noqa: BLE001
+            logger.warning("wave2 to %s failed: %s", chat_id, e)
+            failed += 1
+        await asyncio.sleep(0.05)  # лимит Telegram 30 msg/sec
+    await bot.send_message(call.message.chat.id, f"✅ 2-я волна разослана.\nДоставлено: {sent}\nНе удалось: {failed}")
+
+
 _COMMANDS_TEXT = (
     "📋 <b>Команды и разделы админки</b>\n\n"
     "<b>Меню (кнопки «🛠 Админка»):</b>\n"
@@ -218,6 +313,7 @@ _COMMANDS_TEXT = (
     "<b>Команды (набрать вручную):</b>\n"
     "/admin — открыть админ-меню\n"
     "/announce — анонс бренда с кнопкой отклика\n"
+    "/wave2 — 2-я волна «Сингл»: тем, кто уже сдал ролик (превью + подтверждение)\n"
     "/nudge_backlog — пуш-напоминание тем, кто зашёл, но не зарегался\n"
     "/photos_to_group — отправить сохранённые фото креаторов в рабочую группу\n"
     "/chatid — показать id текущего чата (для настройки группы)\n"

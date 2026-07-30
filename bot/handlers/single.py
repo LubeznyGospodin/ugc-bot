@@ -25,15 +25,22 @@ from bot.single import (
     DONE_TEXT,
     NOT_A_LINK_TEXT,
     PAYMENT_SAVED_TEXT,
+    WAVE2_ASK_DATE,
+    WAVE2_STILL_ON_TEXT,
     _participates_single,
     get_pipeline,
     mark_accepted,
+    mark_dropped,
     parse_deadline,
     parse_payment,
     producing_text,
     save_payment,
     set_deadline,
+    set_wave2,
     submit_links,
+    wave2_accepted_text,
+    wave2_drop_text,
+    wave2_no_text,
 )
 from bot.states import SingleFSM
 
@@ -249,6 +256,92 @@ async def single_links(message: Message, state: FSMContext, bot: Bot):
             await bot.send_message(admin_id, f"✅ <b>{name}</b> ({tg}) сдал(а) ролик по «Сингл»:\n{text}")
         except Exception:  # noqa: BLE001
             logger.warning("notify admin %s about single done failed", admin_id)
+
+
+# ── Вторая волна: перезалив + новый ролик ─────────────────────────────────────
+async def _notify_admins(bot: Bot, text: str) -> None:
+    for admin_id in settings.admin_ids:
+        try:
+            await bot.send_message(admin_id, text)
+        except Exception:  # noqa: BLE001
+            logger.warning("notify admin %s failed", admin_id)
+
+
+async def _who(chat_id: int, fallback) -> str:
+    p = await get_pipeline(chat_id)
+    name = (p.full_name if p else None) or fallback.full_name
+    tg = (p.telegram if p else None) or (f"@{fallback.username}" if fallback.username else "—")
+    return f"<b>{name}</b> ({tg})"
+
+
+async def _name(chat_id: int, fallback) -> str:
+    """Имя для согласования по полу («сделал/сделала»): из пайплайна (там имя из
+    таблицы), иначе — из профиля Telegram."""
+    p = await get_pipeline(chat_id)
+    return (p.full_name if p else None) or fallback.full_name or ""
+
+
+@router.callback_query(F.data == "w2:go")
+async def wave2_go(call: CallbackQuery, state: FSMContext, bot: Bot):
+    await call.answer()
+    await set_wave2(call.from_user.id, "go")
+    await state.set_state(SingleFSM.waiting_wave2_date)
+    await bot.send_message(call.message.chat.id, WAVE2_ASK_DATE, disable_web_page_preview=True)
+
+
+@router.callback_query(F.data == "w2:date")
+async def wave2_date_resume(call: CallbackQuery, state: FSMContext, bot: Bot):
+    """Вернуться к вводу даты по кнопке из пинка (FSM мог сброситься другим диалогом)."""
+    await call.answer()
+    await state.set_state(SingleFSM.waiting_wave2_date)
+    await bot.send_message(call.message.chat.id, WAVE2_ASK_DATE, disable_web_page_preview=True)
+
+
+@router.callback_query(F.data == "w2:no")
+async def wave2_no(call: CallbackQuery, state: FSMContext, bot: Bot):
+    await call.answer()
+    await set_wave2(call.from_user.id, "no")
+    _mirror(call.from_user.id, {"wave2": "не интересно"})
+    await state.clear()
+    await bot.send_message(call.message.chat.id, wave2_no_text(await _name(call.from_user.id, call.from_user)))
+    await _notify_admins(bot, f"🚫 {await _who(call.from_user.id, call.from_user)} — 2-я волна: «не интересно».")
+
+
+@router.message(SingleFSM.waiting_wave2_date, F.text)
+async def wave2_date(message: Message, state: FSMContext, bot: Bot):
+    dl = parse_deadline(message.text)
+    if dl is None:
+        await message.answer(BAD_DEADLINE_TEXT)
+        return
+    await set_wave2(message.from_user.id, "go", dl)
+    _mirror(message.from_user.id, {"wave2": dl.strftime("%d.%m.%Y")})
+    await state.clear()
+    await message.answer(wave2_accepted_text(dl))
+    await _notify_admins(
+        bot, f"🚀 {await _who(message.from_user.id, message.from_user)} — 2-я волна: публикует {dl.strftime('%d.%m')}."
+    )
+
+
+@router.callback_query(F.data.in_({"w2:still_on", "single:still_on"}))
+async def wave_still_on(call: CallbackQuery, bot: Bot):
+    """«Всё в силе» — просто подтверждение, этап не меняем."""
+    await call.answer("Принято 👍")
+    await bot.send_message(call.message.chat.id, WAVE2_STILL_ON_TEXT)
+
+
+@router.callback_query(F.data.in_({"w2:drop", "single:drop"}))
+async def wave_drop(call: CallbackQuery, state: FSMContext, bot: Bot):
+    """«Не буду участвовать» — снимаем с напоминаний соответствующей волны."""
+    await call.answer()
+    wave = 2 if call.data.startswith("w2:") else 1
+    if wave == 2:
+        await set_wave2(call.from_user.id, "dropped")
+        _mirror(call.from_user.id, {"wave2": "отказ"})
+    else:
+        await mark_dropped(call.from_user.id)
+    await state.clear()
+    await bot.send_message(call.message.chat.id, wave2_drop_text(await _name(call.from_user.id, call.from_user)))
+    await _notify_admins(bot, f"❌ {await _who(call.from_user.id, call.from_user)} — отказ по волне {wave}.")
 
 
 @router.message(SingleFSM.waiting_payment)
