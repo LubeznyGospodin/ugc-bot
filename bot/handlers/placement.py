@@ -269,6 +269,12 @@ async def send_placement_prompt(bot: Bot, tg_id: int) -> None:
     # incomplete — не блокирует: креатор мог дослать медиа, проверяем заново.
     if not creator or creator.placement in ("pending", "placed", "rejected"):
         return
+    # Защита от дублей: пост уже есть (статус мог быть сброшен вручную) — не переспрашиваем.
+    if creator.channel_msg_id:
+        logger.info("placement %s: уже в канале (msg %s), промпт не шлём",
+                    tg_id, creator.channel_msg_id)
+        await _set(tg_id, placement="placed")
+        return
     # Годные видео — только те, что прошли нормализацию (размеры подтверждены).
     vids = await _video_ids(bot, works)
     if len(photos) < MIN_PHOTOS or len(vids) < MIN_VIDEOS:
