@@ -420,6 +420,21 @@ async def submit(call: CallbackQuery, state: FSMContext, bot: Bot):
         reply_markup=works_offer_keyboard(),
     )
 
+    # Сразу зовём админа решать: промпт с превью + кнопками [Разместить]/[Нахер].
+    # Медиа возьмётся из бота, а если анкета пришла со ссылкой на Я.Диск — оттуда.
+    # Фоном (create_task): скачивание/перезалив не должны тормозить ответ креатору.
+    import asyncio as _asyncio
+
+    from bot.handlers.placement import send_placement_prompt
+
+    async def _prompt() -> None:
+        try:
+            await send_placement_prompt(bot, tg_id)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("placement prompt after registration failed for %s: %s", tg_id, e)
+
+    _asyncio.create_task(_prompt())
+
 
 async def _send_media_group(bot: Bot, admin_id: int, media_cls, ids: list[str]) -> None:
     """Отправить пачку медиа одного типа (фото ИЛИ документы) — по одному или группой."""

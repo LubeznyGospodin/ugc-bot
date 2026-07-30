@@ -139,12 +139,108 @@ async def _set(tg_id: int, **fields) -> None:
             await s.commit()
 
 
+async def import_from_cloud(bot: Bot, tg_id: int) -> tuple[int, int]:
+    """Забрать медиа из публичной ссылки на Я.Диск (её часть креаторов присылает вместо
+    загрузки файлов) в БД: фото → creator_photos, видео → creator_works (нормализованные).
+    Возвращает (добавлено фото, добавлено видео)."""
+    import asyncio as _a
+
+    from bot.utils.clouddl import download, find_yadisk, list_public, split_media
+
+    async with get_session() as s:
+        c = (await s.execute(select(Creator).where(Creator.tg_id == tg_id))).scalar_one_or_none()
+        if not c:
+            return 0, 0
+        link = (
+            find_yadisk(c.photo) or find_yadisk(c.portfolio)
+            or find_yadisk(c.instagram) or find_yadisk(c.other_socials)
+        )
+    if not link:
+        return 0, 0
+    try:
+        items = await _a.to_thread(list_public, link)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("cloud list failed for %s: %s", tg_id, e)
+        return 0, 0
+    cloud_ph, cloud_vd = split_media(items)
+
+    _, have_ph, have_vd = await _load(tg_id)
+    nph = nvd = 0
+    admin = settings.admin_ids[0]
+
+    for it in cloud_ph[: max(0, MAX_PHOTOS + 2 - len(have_ph))]:
+        try:
+            blob = await _a.to_thread(download, link, it["path"])
+            m = await bot.send_photo(admin, BufferedInputFile(blob, it["name"]),
+                                     disable_notification=True)
+            fid = m.photo[-1].file_id if m.photo else None
+            try:
+                await bot.delete_message(admin, m.message_id)
+            except Exception:  # noqa: BLE001
+                pass
+            if fid:
+                async with get_session() as s:
+                    s.add(CreatorPhoto(tg_id=tg_id, kind="photo", file_id=fid))
+                    await s.commit()
+                nph += 1
+        except Exception as e:  # noqa: BLE001
+            logger.warning("cloud photo %s failed: %s", it.get("name"), e)
+
+    pos = len(have_vd)
+    for it in cloud_vd[: max(0, MAX_VIDEOS - len(have_vd))]:
+        try:
+            blob = await _a.to_thread(download, link, it["path"])
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tf:
+                tf.write(blob)
+                tmp = tf.name
+            out = tmp + ".h264.mp4"
+            try:
+                src = out if to_playable_mp4(tmp, out) else tmp
+                blob = open(src, "rb").read()
+                dur, w, h = probe_dims(src)
+                thumb = make_thumb(src)
+            finally:
+                for p in (tmp, out):
+                    if os.path.exists(p):
+                        os.unlink(p)
+            kw: dict = {"supports_streaming": True, "disable_notification": True}
+            if w and h:
+                kw.update(width=w, height=h, duration=dur)
+            if thumb:
+                kw["thumbnail"] = BufferedInputFile(thumb, "t.jpg")
+            m = await bot.send_video(admin, BufferedInputFile(blob, "v.mp4"), **kw)
+            fid = m.video.file_id if m.video else None
+            try:
+                await bot.delete_message(admin, m.message_id)
+            except Exception:  # noqa: BLE001
+                pass
+            if fid:
+                pos += 1
+                async with get_session() as s:
+                    s.add(CreatorWork(tg_id=tg_id, project="base", file_id=fid,
+                                      source="cloud", position=pos, normalized=True))
+                    await s.commit()
+                nvd += 1
+        except Exception as e:  # noqa: BLE001
+            logger.warning("cloud video %s failed: %s", it.get("name"), e)
+
+    if nph or nvd:
+        logger.info("cloud import %s: +%s фото, +%s видео", tg_id, nph, nvd)
+    return nph, nvd
+
+
 async def send_placement_prompt(bot: Bot, tg_id: int) -> None:
-    """Прислать админам карточку-заявку с кнопками. Один раз (placement=None → pending)."""
+    """Прислать админам карточку-заявку с кнопками. Один раз (placement=None → pending).
+
+    Медиа берём из бота, а если его нет — тянем из облачной ссылки анкеты. Промпт шлём,
+    как только есть ХОТЬ ЧТО-ТО (фото или видео): решение о размещении принимает админ."""
     creator, photos, works = await _load(tg_id)
-    if not creator or not photos or not works:
+    if not creator or creator.placement:  # уже pending/placed/rejected — не спамим
         return
-    if creator.placement:  # уже pending/placed/rejected — не спамим повторными работами
+    if not photos or not works:
+        await import_from_cloud(bot, tg_id)
+        creator, photos, works = await _load(tg_id)
+    if not photos and not works:
         return
     await _set(tg_id, placement="pending")
     ph = photos[:MAX_PHOTOS]
