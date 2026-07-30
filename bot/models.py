@@ -42,8 +42,9 @@ class Creator(Base):
     sheet_row: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    # Размещение в канале @ugc_creatory: None → ещё не решали; pending → админу отправлена
-    # кнопка; placed → опубликован; rejected → «нахер» (спам/отказ).
+    # Размещение в канале @ugc_creatory: None → ещё не решали; incomplete → не хватает
+    # контента (<2 фото или <4 видео), админа не дёргаем и ждём догрузки; pending → админу
+    # отправлена кнопка; placed → опубликован; rejected → «нахер» (спам/отказ).
     placement: Mapped[str | None] = mapped_column(String(16), nullable=True)
     channel_msg_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     # UID карточки на Тильде (для прямой ссылки в посте). None → ссылка на общий каталог.
@@ -132,6 +133,10 @@ class SinglePipeline(Base):
     payment_phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     payment_bank: Mapped[str | None] = mapped_column(Text, nullable=True)
     payment_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Вторая волна (перезалив + новый ролик): "" | sent | go | no | dropped.
+    wave2_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    wave2_deadline: Mapped[date | None] = mapped_column(Date, nullable=True)
+    wave2_reminded: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

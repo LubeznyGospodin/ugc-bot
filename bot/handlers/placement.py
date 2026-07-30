@@ -36,6 +36,10 @@ router = Router(name="placement")
 CARD_URL = "https://packman-prod.ru/ugc_creators/tproduct/{uid}"
 MAX_PHOTOS = 2
 MAX_VIDEOS = 4
+# Полный комплект карточки. Меньше — админу НЕ показываем (не дёргаем зря),
+# помечаем «не хватает контента» и ждём, пока креатор дошлёт.
+MIN_PHOTOS = 2
+MIN_VIDEOS = 4
 MAX_DL = 20 * 1024 * 1024  # Bot API качает file_id только до 20МБ
 
 
@@ -235,14 +239,34 @@ async def send_placement_prompt(bot: Bot, tg_id: int) -> None:
     Медиа берём из бота, а если его нет — тянем из облачной ссылки анкеты. Промпт шлём,
     как только есть ХОТЬ ЧТО-ТО (фото или видео): решение о размещении принимает админ."""
     creator, photos, works = await _load(tg_id)
-    if not creator or creator.placement:  # уже pending/placed/rejected — не спамим
+    # incomplete — не блокирует: креатор мог дослать медиа, проверяем заново.
+    if not creator or creator.placement in ("pending", "placed", "rejected"):
         return
-    if not photos or not works:
-        await import_from_cloud(bot, tg_id)
+    vids = [w for w in works if w.file_id]
+    if len(photos) < MIN_PHOTOS or len(vids) < MIN_VIDEOS:
+        await import_from_cloud(bot, tg_id)  # добираем из облачной ссылки анкеты
         creator, photos, works = await _load(tg_id)
-    if not photos and not works:
+        vids = [w for w in works if w.file_id]
+    if len(photos) < MIN_PHOTOS or len(vids) < MIN_VIDEOS:
+        # Неполный комплект — админа не дёргаем, помечаем и ждём догрузки.
+        await _set(tg_id, placement="incomplete")
+        need = []
+        if len(photos) < MIN_PHOTOS:
+            need.append(f"фото {len(photos)}/{MIN_PHOTOS}")
+        if len(vids) < MIN_VIDEOS:
+            need.append(f"видео {len(vids)}/{MIN_VIDEOS}")
+        logger.info("placement %s: не хватает контента (%s)", tg_id, ", ".join(need))
+        try:
+            await sheets_client.content_status(tg_id, "не хватает: " + ", ".join(need))
+        except SheetsError as e:  # noqa: BLE001
+            logger.warning("content_status failed for %s: %s", tg_id, e)
         return
+
     await _set(tg_id, placement="pending")
+    try:
+        await sheets_client.content_status(tg_id, "готов — отправлен на утверждение")
+    except SheetsError as e:  # noqa: BLE001
+        logger.warning("content_status failed for %s: %s", tg_id, e)
     ph = photos[:MAX_PHOTOS]
     vids = await _video_ids(bot, works)  # нормализуем document→video (и кэшируем)
     # Альбом-превью ровно того, что уйдёт в канал — админ видит контент и решает.
