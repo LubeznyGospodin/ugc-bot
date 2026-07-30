@@ -207,30 +207,9 @@ def admin_menu_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="📊 Аналитика", callback_data="admin:stats")],
             [InlineKeyboardButton(text="🔗 Источники (?start=метки)", callback_data="admin:sources")],
-            [InlineKeyboardButton(text="🎬 Воронка «Сингл»", callback_data="admin:single_funnel")],
             [InlineKeyboardButton(text="📣 Рассылка (текст)", callback_data="admin:broadcast")],
-            [InlineKeyboardButton(text="📢 Анонс бренда с кнопкой отклика", callback_data="admin:announce")],
-            [InlineKeyboardButton(text="🎵 Анонс «Сингл» (не откликавшимся)", callback_data="admin:announce_single")],
-            [InlineKeyboardButton(text="📤 Экспорт креаторов", callback_data="admin:export")],
-            [InlineKeyboardButton(text="📥 Экспорт заходов (все)", callback_data="admin:export_visits")],
-            [InlineKeyboardButton(text="🙈 Экспорт: заходили, но не зарегались", callback_data="admin:export_unreg")],
+            [InlineKeyboardButton(text="📤 Экспорт (xlsx)", callback_data="admin:export")],
             [InlineKeyboardButton(text="📋 Список команд", callback_data="admin:commands")],
-        ]
-    )
-
-
-def announce_brand_keyboard(brands: list[Brand]) -> InlineKeyboardMarkup:
-    """Выбор бренда для анонса — по кнопке на бренд + отмена."""
-    rows = [[InlineKeyboardButton(text=b.title[:60], callback_data=f"announce_brand:{b.id}")] for b in brands]
-    rows.append([InlineKeyboardButton(text="Отмена", callback_data="announce:cancel")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def announce_confirm_keyboard(n: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=f"📢 Отправить {n} креаторам", callback_data="announce:send")],
-            [InlineKeyboardButton(text="Отмена", callback_data="announce:cancel")],
         ]
     )
 
@@ -263,6 +242,16 @@ def wave2_offer_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[[
             InlineKeyboardButton(text="🚀 Погнали", callback_data="w2:go"),
             InlineKeyboardButton(text="Не интересно", callback_data="w2:no"),
+        ]]
+    )
+
+
+def pack_offer_keyboard() -> InlineKeyboardMarkup:
+    """Кнопки под донабором «UGC-пак за ролик в срок»."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(text="🚀 Погнали", callback_data="pack:go"),
+            InlineKeyboardButton(text="Не интересно", callback_data="pack:no"),
         ]]
     )
 

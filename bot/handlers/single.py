@@ -24,10 +24,17 @@ from bot.single import (
     BAD_PAYMENT_TEXT,
     DONE_TEXT,
     NOT_A_LINK_TEXT,
+    PACK_COLUMN,
+    PACK_DEADLINE,
+    PACK_GO_TEXT,
+    PACK_NO_TEXT,
     PAYMENT_SAVED_TEXT,
+    SINGLE_BRAND_ID,
+    SINGLE_BRAND_TITLE,
     WAVE2_ASK_DATE,
     WAVE2_STILL_ON_TEXT,
     _participates_single,
+    ensure_pipeline,
     get_pipeline,
     mark_accepted,
     mark_dropped,
@@ -256,6 +263,65 @@ async def single_links(message: Message, state: FSMContext, bot: Bot):
             await bot.send_message(admin_id, f"✅ <b>{name}</b> ({tg}) сдал(а) ролик по «Сингл»:\n{text}")
         except Exception:  # noqa: BLE001
             logger.warning("notify admin %s about single done failed", admin_id)
+
+
+# ── Донабор по базе: UGC-пак за ролик, сданный в срок ─────────────────────────
+def _pack_answer(chat_id: int, value: str) -> None:
+    """Ответ на донабор — в лист креаторов, колонка PACK_COLUMN (в конце). Пишем и «взял»,
+    и «не интересно»: иначе в таблице видны только отклики, а отказы — нигде."""
+    async def _run():
+        try:
+            await sheets_client.creator_set(PACK_COLUMN, chat_id, value)
+        except SheetsError as e:  # noqa: BLE001
+            logger.warning("pack answer mirror failed for %s: %s", chat_id, e)
+
+    asyncio.create_task(_run())
+
+
+def _pack_sheet_sync(chat_id: int, name: str, tg: str) -> None:
+    """Фоном и ПОСЛЕДОВАТЕЛЬНО: завести отклик (если его нет) → записать срок в строку.
+    Порядок важен — single_update пишет только в существующую строку br1."""
+    async def _run():
+        try:
+            await sheets_client.apply(SINGLE_BRAND_ID, SINGLE_BRAND_TITLE, name, tg, chat_id, status="оффер")
+        except SheetsError as e:  # noqa: BLE001
+            logger.warning("pack apply failed for %s: %s", chat_id, e)
+        try:
+            await sheets_client.single_update(chat_id, {"deadline": PACK_DEADLINE.strftime("%d.%m.%Y")})
+        except SheetsError as e:  # noqa: BLE001
+            logger.warning("pack deadline mirror failed for %s: %s", chat_id, e)
+
+    asyncio.create_task(_run())
+
+
+@router.callback_query(F.data == "pack:go")
+async def pack_go(call: CallbackQuery, state: FSMContext, bot: Bot):
+    """«Погнали» по донабору: ставим общий дедлайн 3.08 и заводим отклик, если его не было."""
+    from bot.utils.db_helpers import get_creator_by_tg_id
+
+    await call.answer()
+    creator = await get_creator_by_tg_id(call.from_user.id)
+    name = (getattr(creator, "full_name", None) or call.from_user.full_name or "")
+    tg = (getattr(creator, "telegram_contact", None)
+          or (f"@{call.from_user.username}" if call.from_user.username else ""))
+    await ensure_pipeline(call.from_user.id, name, tg)
+    await set_deadline(call.from_user.id, PACK_DEADLINE, PACK_DEADLINE.strftime("%d.%m.%Y"))
+    _pack_sheet_sync(call.from_user.id, name, tg)
+    _pack_answer(call.from_user.id, f"✅ взял, срок {PACK_DEADLINE.strftime('%d.%m')}")
+    await state.clear()
+    await bot.send_message(call.message.chat.id, PACK_GO_TEXT,
+                           reply_markup=single_submit_keyboard(), disable_web_page_preview=True)
+    await _notify_admins(bot, f"🚀 {await _who(call.from_user.id, call.from_user)} — донабор: берётся за ролик к {PACK_DEADLINE.strftime('%d.%m')}.")
+
+
+@router.callback_query(F.data == "pack:no")
+async def pack_no(call: CallbackQuery, state: FSMContext, bot: Bot):
+    await call.answer()
+    await ensure_pipeline(call.from_user.id)
+    await mark_dropped(call.from_user.id)
+    _pack_answer(call.from_user.id, "❌ не интересно")
+    await state.clear()
+    await bot.send_message(call.message.chat.id, PACK_NO_TEXT)
 
 
 # ── Вторая волна: перезалив + новый ролик ─────────────────────────────────────

@@ -22,19 +22,16 @@ from bot.database import get_session
 from bot.keyboards import (
     BTN_ADMIN,
     admin_menu_keyboard,
-    announce_brand_keyboard,
-    announce_confirm_keyboard,
-    apply_button_keyboard,
     broadcast_confirm_keyboard,
     nudge_backlog_confirm_keyboard,
 )
 from bot.models import Creator
 from bot.sheets import SheetsError, sheets_client
-from bot.states import AddVideoFSM, AnnounceFSM, BroadcastFSM
+from bot.states import AddVideoFSM, BroadcastFSM
 from bot.utils.chat_cleanup import render_screen
 from bot.single import wave2_audience
 from bot.utils.db_helpers import count_creators, funnel_stats
-from bot.utils.export import export_creators_xlsx, export_unregistered_xlsx, export_visits_xlsx
+from bot.utils.export import export_all_xlsx
 
 logger = logging.getLogger(__name__)
 router = Router(name="admin")
@@ -207,11 +204,17 @@ async def admin_broadcast_send(call: CallbackQuery, state: FSMContext, bot: Bot)
 
 
 # ── Рассылка 2-й волны «Сингл» ────────────────────────────────────────────────
+@router.callback_query(F.data == "admin:wave2")
 @router.message(Command("wave2"))
-async def wave2_preview(message: Message, bot: Bot):
+async def wave2_preview(event, bot: Bot):
     """Превью рассылки 2-й волны: кому уйдёт + текст. Отправка — по кнопке."""
-    if not _admin_only(message.from_user.id):
+    if not _admin_only(event.from_user.id):
+        if isinstance(event, CallbackQuery):
+            await event.answer("Недоступно", show_alert=True)
         return
+    message = event.message if isinstance(event, CallbackQuery) else event
+    if isinstance(event, CallbackQuery):
+        await event.answer()
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
     from bot.single import wave2_text
@@ -230,6 +233,78 @@ async def wave2_preview(message: Message, bot: Bot):
         f"Текст (пример подстановки имени):\n———\n{wave2_text(aud[0][1])}\n———",
         reply_markup=kb, disable_web_page_preview=True,
     )
+
+
+# ── Донабор по базе: UGC-пак за ролик к 3.08 ──────────────────────────────────
+@router.message(Command("pack_test"))
+async def pack_test(message: Message, bot: Bot):
+    """Прогон донабора на себе — тот же текст и кнопки, что уйдут базе."""
+    if not _admin_only(message.from_user.id):
+        return
+    from bot.keyboards import pack_offer_keyboard
+    from bot.single import pack_text
+
+    await bot.send_message(message.chat.id, pack_text(message.from_user.first_name or ""),
+                           reply_markup=pack_offer_keyboard(), disable_web_page_preview=True)
+
+
+@router.callback_query(F.data == "admin:pack")
+@router.message(Command("pack"))
+async def pack_preview(event, bot: Bot):
+    """Превью донабора: сколько человек + текст. Отправка — по кнопке."""
+    if not _admin_only(event.from_user.id):
+        if isinstance(event, CallbackQuery):
+            await event.answer("Недоступно", show_alert=True)
+        return
+    message = event.message if isinstance(event, CallbackQuery) else event
+    if isinstance(event, CallbackQuery):
+        await event.answer()
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    from bot.single import pack_audience, pack_text
+
+    aud = await pack_audience()
+    if not aud:
+        await message.answer("Некому: база пуста.")
+        return
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text=f"✅ Отправить ({len(aud)})", callback_data="admin:pack_send"),
+        InlineKeyboardButton(text="❌ Отмена", callback_data="admin:pack_cancel"),
+    ]])
+    await message.answer(
+        f"🎁 <b>Донабор «UGC-пак»</b> — {len(aud)} чел. (вся база, кроме сдавших ролик).\n\n"
+        f"Текст (пример подстановки имени):\n———\n{pack_text(aud[0][1])}\n———",
+        reply_markup=kb, disable_web_page_preview=True,
+    )
+
+
+@router.callback_query(F.data == "admin:pack_cancel")
+async def pack_cancel(call: CallbackQuery):
+    await call.answer("Отменено")
+    await call.message.edit_reply_markup(reply_markup=None)
+
+
+@router.callback_query(F.data == "admin:pack_send")
+async def pack_send(call: CallbackQuery, bot: Bot):
+    if not _admin_only(call.from_user.id):
+        await call.answer("Недоступно", show_alert=True)
+        return
+    from bot.keyboards import pack_offer_keyboard
+    from bot.single import pack_audience, pack_text
+
+    await call.answer("Рассылаю...")
+    await call.message.edit_reply_markup(reply_markup=None)
+    sent, failed = 0, 0
+    for chat_id, name in await pack_audience():
+        try:
+            await bot.send_message(chat_id, pack_text(name), reply_markup=pack_offer_keyboard(),
+                                   disable_web_page_preview=True)
+            sent += 1
+        except Exception as e:  # noqa: BLE001
+            logger.warning("pack to %s failed: %s", chat_id, e)
+            failed += 1
+        await asyncio.sleep(0.05)  # лимит Telegram 30 msg/sec
+    await bot.send_message(call.message.chat.id, f"✅ Донабор разослан.\nДоставлено: {sent}\nНе удалось: {failed}")
 
 
 @router.message(Command("wave2_test"))
@@ -301,19 +376,21 @@ async def wave2_send(call: CallbackQuery, bot: Bot):
 
 
 _COMMANDS_TEXT = (
-    "📋 <b>Команды и разделы админки</b>\n\n"
-    "<b>Меню (кнопки «🛠 Админка»):</b>\n"
+    "📋 <b>Команды и разделы</b>\n\n"
+    "<b>«🛠 Админка» — только общее по боту:</b>\n"
     "📊 Аналитика — воронка CJM\n"
-    "🎬 Воронка «Сингл» — этапы пайплайна (отклик→ролик)\n"
+    "🔗 Источники — переходы по <code>?start=метка</code>\n"
     "📣 Рассылка (текст) — сообщение всем креаторам\n"
-    "📢 Анонс бренда — рассылка с кнопкой «Откликнуться»\n"
-    "📤 Экспорт креаторов — xlsx всех анкет\n"
-    "📥 Экспорт заходов (все) — все, кто жал /start\n"
-    "🙈 Экспорт: не зарегались — кому уйдёт пуш\n\n"
+    "📤 Экспорт (xlsx) — один файл, листы: Креаторы · Заходы · Не зарегались\n\n"
+    "<b>«📁 Мои проекты» → Сингл — всё по проекту:</b>\n"
+    "🎬 Воронка «Сингл» — этапы пайплайна (отклик→ролик)\n"
+    "🌊 2-я волна — тем, кто уже сдал ролик\n"
+    "🎁 Донабор «UGC-пак» — по всей базе\n"
+    "➕ Добавить ролик за креатора\n\n"
     "<b>Команды (набрать вручную):</b>\n"
     "/admin — открыть админ-меню\n"
-    "/announce — анонс бренда с кнопкой отклика\n"
-    "/wave2 — 2-я волна «Сингл»: тем, кто уже сдал ролик (превью + подтверждение)\n"
+    "/wave2 · /pack — те же рассылки командой\n"
+    "/wave2_test · /pack_test — прогон рассылки на себе\n"
     "/nudge_backlog — пуш-напоминание тем, кто зашёл, но не зарегался\n"
     "/photos_to_group — отправить сохранённые фото креаторов в рабочую группу\n"
     "/chatid — показать id текущего чата (для настройки группы)\n"
@@ -333,7 +410,7 @@ async def admin_single_funnel(call: CallbackQuery, bot: Bot):
     await call.answer()
     from bot.single import funnel, funnel_text
 
-    await render_screen(bot, call.message.chat.id, funnel_text(await funnel()), reply_markup=admin_menu_keyboard())
+    await bot.send_message(call.message.chat.id, funnel_text(await funnel()))
 
 
 @router.callback_query(F.data == "admin:commands")
@@ -343,145 +420,6 @@ async def admin_commands(call: CallbackQuery, bot: Bot):
         return
     await call.answer()
     await render_screen(bot, call.message.chat.id, _COMMANDS_TEXT, reply_markup=admin_menu_keyboard())
-
-
-# ── Анонс бренда по базе с кнопкой «Откликнуться» ─────────────────────────────
-@router.callback_query(F.data == "admin:announce")
-@router.message(Command("announce"))
-async def announce_start(event, bot: Bot, state: FSMContext):
-    user_id = event.from_user.id
-    chat_id = event.message.chat.id if isinstance(event, CallbackQuery) else event.chat.id
-    if not _admin_only(user_id):
-        if isinstance(event, CallbackQuery):
-            await event.answer("Недоступно", show_alert=True)
-        return
-    if isinstance(event, CallbackQuery):
-        await event.answer()
-    await state.clear()
-    from bot.handlers.brands import _fetch_brands
-
-    brands = await _fetch_brands()
-    if not brands:
-        await render_screen(bot, chat_id, "Нет активных брендов для анонса.", reply_markup=admin_menu_keyboard())
-        return
-    await render_screen(
-        bot, chat_id,
-        "📢 Какой бренд анонсируем? (кнопка «Откликнуться» приведёт именно к нему)",
-        reply_markup=announce_brand_keyboard(brands),
-    )
-
-
-@router.callback_query(F.data == "admin:announce_single")
-async def announce_single_start(call: CallbackQuery, state: FSMContext, bot: Bot):
-    """Анонс Сингла ТОЛЬКО тем, кто не откликался на него или получил отказ."""
-    if not _admin_only(call.from_user.id):
-        await call.answer("Недоступно", show_alert=True)
-        return
-    await call.answer()
-    await state.clear()
-    await state.update_data(
-        announce_brand_id="br1",
-        announce_brand_title="Сингл (ИИ-треки от ЗВУК)",
-        announce_mode="single_cold",
-    )
-    await state.set_state(AnnounceFSM.waiting_text)
-    await render_screen(
-        bot, call.message.chat.id,
-        "📢 Анонс «Сингл» — только тем, кто <b>не откликался</b> на него или получил <b>отказ</b>.\n\n"
-        "Пришли текст анонса. Внизу будет кнопка «🙋 Откликнуться».",
-    )
-
-
-@router.callback_query(F.data.startswith("announce_brand:"))
-async def announce_pick_brand(call: CallbackQuery, state: FSMContext, bot: Bot):
-    if not _admin_only(call.from_user.id):
-        await call.answer("Недоступно", show_alert=True)
-        return
-    await call.answer()
-    brand_id = call.data.split(":", 1)[1]
-    from bot.handlers.brands import _fetch_brands
-
-    brands = await _fetch_brands()
-    brand = next((b for b in brands if b.id == brand_id), None)
-    if brand is None:
-        await render_screen(bot, call.message.chat.id, "Бренд не найден, попробуй ещё раз.", reply_markup=admin_menu_keyboard())
-        return
-    await state.update_data(announce_brand_id=brand_id, announce_brand_title=brand.title)
-    await state.set_state(AnnounceFSM.waiting_text)
-    await render_screen(
-        bot, call.message.chat.id,
-        f"Бренд: <b>{brand.title}</b>\n\nПришли текст анонса одним сообщением. "
-        "Внизу автоматически будет кнопка «🙋 Откликнуться».",
-    )
-
-
-@router.message(AnnounceFSM.waiting_text)
-async def announce_text(message: Message, state: FSMContext, bot: Bot):
-    if not _admin_only(message.from_user.id):
-        return
-    await state.update_data(announce_text=_message_html(message))
-    data = await state.get_data()
-    if data.get("announce_mode") == "single_cold":
-        from bot.single import single_announce_audience
-
-        ids = await single_announce_audience()
-        await state.update_data(announce_ids=ids)
-        count = len(ids)
-        who = "не откликавшимся на «Сингл» / с отказом"
-    else:
-        count = await count_creators()
-        who = "всем креаторам"
-    await state.set_state(AnnounceFSM.waiting_confirm)
-    await render_screen(
-        bot, message.chat.id,
-        f"Анонс <b>{data.get('announce_brand_title')}</b>.\n"
-        f"Получат: <b>{count}</b> ({who}).\n\n———\n{data.get('announce_text')}\n———\n"
-        "Внизу у каждого будет кнопка «🙋 Откликнуться».",
-        reply_markup=announce_confirm_keyboard(count),
-        delete_trigger=message,
-    )
-
-
-@router.callback_query(F.data == "announce:cancel")
-async def announce_cancel(call: CallbackQuery, state: FSMContext, bot: Bot):
-    await call.answer("Отменено")
-    await state.clear()
-    await render_screen(bot, call.message.chat.id, "⚙️ Админ-панель", reply_markup=admin_menu_keyboard())
-
-
-@router.callback_query(AnnounceFSM.waiting_confirm, F.data == "announce:send")
-async def announce_send(call: CallbackQuery, state: FSMContext, bot: Bot):
-    if not _admin_only(call.from_user.id):
-        await call.answer("Недоступно", show_alert=True)
-        return
-    data = await state.get_data()
-    text = data.get("announce_text", "")
-    brand_id = data.get("announce_brand_id", "")
-    await state.clear()
-    await call.answer("Рассылаю анонс...")
-    await render_screen(bot, call.message.chat.id, "📢 Рассылаю анонс...")
-
-    chat_ids = data.get("announce_ids")  # таргет-аудитория (single_cold); иначе все
-    if not chat_ids:
-        async with get_session() as session:
-            chat_ids = [row[0] for row in (await session.execute(select(Creator.tg_id))).all()]
-
-    kb = apply_button_keyboard(brand_id)
-    sent, failed = 0, 0
-    for chat_id in chat_ids:
-        try:
-            await bot.send_message(chat_id, text, reply_markup=kb)
-            sent += 1
-        except Exception as e:  # noqa: BLE001
-            logger.warning("announce to %s failed: %s", chat_id, e)
-            failed += 1
-        await asyncio.sleep(0.05)  # лимиты Telegram
-
-    await render_screen(
-        bot, call.message.chat.id,
-        f"✅ Анонс разослан.\nДоставлено: {sent}\nНе удалось: {failed}",
-        reply_markup=admin_menu_keyboard(),
-    )
 
 
 @router.message(Command("addvideo"))
@@ -711,51 +649,19 @@ async def nudge_backlog_send(call: CallbackQuery, bot: Bot):
 
 
 @router.callback_query(F.data == "admin:export")
-async def admin_export(call: CallbackQuery, bot: Bot):
-    if not _admin_only(call.from_user.id):
-        await call.answer("Недоступно", show_alert=True)
-        return
-    await call.answer("Формирую файл...")
-    buf = await export_creators_xlsx()
-    await bot.send_document(
-        call.message.chat.id,
-        BufferedInputFile(buf.read(), filename="creators.xlsx"),
-    )
-
-
-@router.callback_query(F.data == "admin:export_unreg")
-async def admin_export_unreg(call: CallbackQuery, bot: Bot):
-    """Только незарегистрировавшиеся — ровно те, кому уйдёт пуш-напоминание."""
-    if not _admin_only(call.from_user.id):
-        await call.answer("Недоступно", show_alert=True)
-        return
-    await call.answer("Формирую список...")
-    buf = await export_unregistered_xlsx()
-    await bot.send_document(
-        call.message.chat.id,
-        BufferedInputFile(buf.read(), filename="ne_zaregalis.xlsx"),
-    )
-
-
-@router.callback_query(F.data == "admin:export_visits")
-async def admin_export_visits(call: CallbackQuery, bot: Bot):
-    if not _admin_only(call.from_user.id):
-        await call.answer("Недоступно", show_alert=True)
-        return
-    await call.answer("Формирую список заходов...")
-    buf = await export_visits_xlsx()
-    await bot.send_document(
-        call.message.chat.id,
-        BufferedInputFile(buf.read(), filename="zahody.xlsx"),
-    )
-
-
 @router.message(Command("export"))
-async def export_command(message: Message, bot: Bot):
-    if not _admin_only(message.from_user.id):
+async def admin_export(event, bot: Bot):
+    """Один файл на всё: листы «Креаторы», «Заходы», «Не зарегались»."""
+    if not _admin_only(event.from_user.id):
+        if isinstance(event, CallbackQuery):
+            await event.answer("Недоступно", show_alert=True)
         return
-    buf = await export_creators_xlsx()
+    chat_id = event.message.chat.id if isinstance(event, CallbackQuery) else event.chat.id
+    if isinstance(event, CallbackQuery):
+        await event.answer("Формирую файл...")
+    buf = await export_all_xlsx()
     await bot.send_document(
-        message.chat.id,
-        BufferedInputFile(buf.read(), filename="creators.xlsx"),
+        chat_id,
+        BufferedInputFile(buf.read(), filename="ugc_radar.xlsx"),
+        caption="📤 Листы: Креаторы · Заходы · Не зарегались",
     )

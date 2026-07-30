@@ -414,24 +414,6 @@ def _stage_card(p: SinglePipeline):
     return head + "Ты в проекте «Сингл».", [_ADD_LINK_BTN]
 
 
-async def single_announce_audience() -> list[int]:
-    """Кому слать анонс Сингла: креаторы бота, которые НИКОГДА не откликались на Сингл
-    ИЛИ у кого стоит «отказ». Исключаем «на рассмотрении»/«оффер» (они уже в работе)."""
-    from sqlalchemy import select
-
-    from bot.database import get_session
-    from bot.models import CachedApplication, Creator
-
-    async with get_session() as s:
-        creators = [c.tg_id for c in (await s.execute(select(Creator))).scalars().all()]
-        apps = (await s.execute(select(CachedApplication))).scalars().all()
-    engaged = {
-        a.chat_id for a in apps
-        if is_single(a.brand_title) and (a.status or "").strip().lower() in ("оффер", "на рассмотрении")
-    }
-    return [tg for tg in creators if tg not in engaged]
-
-
 async def _participates_single(chat_id: int) -> bool:
     """Участвует ли в Сингле по отклику (confirmed=да) — даже без записи пайплайна."""
     from sqlalchemy import select
@@ -462,8 +444,15 @@ async def my_projects_view(chat_id: int, is_admin: bool = False):
     else:
         text, buttons = "📁 <b>Мои проекты</b>\n\nЛичных проектов нет.", []
 
-    if is_admin:  # админу — ручное добавление ролика за креатора (имя + ссылка)
-        buttons = list(buttons) + [("➕ Добавить ролик за креатора", "admin:add_video")]
+    if is_admin:
+        # Всё управление «Синглом» живёт здесь, в проекте — в админке только общее.
+        text += ("\n\n———\n⚙️ <b>Управление проектом</b> (видно только админам)")
+        buttons = list(buttons) + [
+            ("🎬 Воронка «Сингл»", "admin:single_funnel"),
+            ("🌊 2-я волна (сдавшим ролик)", "admin:wave2"),
+            ("🎁 Донабор «UGC-пак»", "admin:pack"),
+            ("➕ Добавить ролик за креатора", "admin:add_video"),
+        ]
     rows = [[InlineKeyboardButton(text=t, callback_data=c)] for t, c in buttons]
     return text, (InlineKeyboardMarkup(inline_keyboard=rows) if rows else None)
 
@@ -551,6 +540,64 @@ async def _remind_creators(bot: Bot) -> None:
             except Exception as e:  # noqa: BLE001
                 logger.info("single remind %s failed: %s", p.chat_id, e)
         await s.commit()
+
+
+# ── Донабор по всей базе: UGC-пак за ролик, сданный в срок ────────────────────
+PACK_DEADLINE = date(2026, 8, 3)  # понедельник
+PACK_COLUMN = "Донабор 3.08"      # колонка ответов в листе креаторов (создаётся в конце)
+SINGLE_BRAND_TITLE = "Сингл (Сервис создания ИИ-треков от СберЗВУК) - охватная кампания"
+
+
+def pack_text(name: str | None) -> str:
+    first = (name or "").strip().split()[0] if (name or "").strip() else ""
+    hello = f"Привет, {first}!" if first else "Привет!"
+    return (
+        f"{hello} Я по проекту «Сингл» от ЗВУКа.\n\n"
+        "У нас немного не хватает до плана по охватам, и без тебя никак.\n\n"
+        "🎁 Мы собрали <b>UGC-пак: 30+ материалов и сервисов</b> для съёмки — нейронки, монтаж, "
+        "тренды, шаблоны. С <b>бесплатным доступом</b>. В открытом виде этого нет нигде.\n\n"
+        "<b>Как получить:</b> сдать ролик по «Синглу» в срок. Всё.\n\n"
+        "⏰ Дедлайн — <b>понедельник, 3 августа</b>. Ролик снимается за вечер, так что успеть "
+        "реально — но тянуть некуда.\n\n"
+        "💰 <b>По деньгам:</b> гарант <b>1 000 ₽</b> за ролик (если 800+ подписчиков и охваты "
+        "от 4 000 на рилс) плюс бонусы за виральность — <b>до +10 000 ₽</b>. Профиль поменьше — "
+        f'платим за охват, от 500 ₽.\n<a href="{_LINK_CONDITIONS}">Условия целиком →</a>\n\n'
+        f"🤖 И сверху: <b>бесплатный доступ к {WAVE2_BOT}</b> — он технически уникализирует "
+        "ролики, чтобы их можно было безопасно перевыкладывать и собирать охваты. Пригодится "
+        "и под свои задачи.\n\n"
+        "Погнали?"
+    )
+
+
+PACK_GO_TEXT = (
+    "🚀 Отлично, ты в деле!\n\n"
+    f'📄 <a href="{_LINK_FORMATS}">Форматы и идеи сценариев</a>\n'
+    f'📋 <a href="{_LINK_CONDITIONS}">Условия участия</a>\n\n'
+    f"⏰ Срок — <b>{PACK_DEADLINE.strftime('%d.%m')}</b> (понедельник). Напомню за день.\n\n"
+    "<b>Как сдавать:</b>\n"
+    '1️⃣ Готовый ролик — на утверждение в <a href="https://t.me/packman_hr">@packman_hr</a>\n'
+    "2️⃣ После утверждения выложи в свои соцсети — без призывов и ссылок, с хештегом "
+    "<code>#синглзвук</code>\n"
+    "3️⃣ Пришли СЮДА ссылки на посты — по кнопке ниже\n\n"
+    "🎁 Сдашь в срок — открою UGC-пак и доступ к боту-уникализатору."
+)
+PACK_NO_TEXT = "Понял, спасибо за ответ 🙏 Если передумаешь — загляни в «🎯 Запросы брендов»."
+
+
+async def pack_audience() -> list[tuple[int, str]]:
+    """Кому слать донабор: ВСЯ база бота, кроме тех, кто уже сдал ролик (они во 2-й волне).
+    → [(chat_id, имя)]. Имя берём из строки отклика, иначе из анкеты."""
+    from bot.models import Creator
+
+    async with get_session() as s:
+        creators = (await s.execute(select(Creator))).scalars().all()
+        apps = (await s.execute(select(CachedApplication))).scalars().all()
+    done = {a.chat_id for a in apps if is_single(a.brand_title) and (a.video or "").strip()}
+    from_sheet = {a.chat_id: (a.name or "").strip() for a in apps if (a.name or "").strip()}
+    return [
+        (c.tg_id, from_sheet.get(c.tg_id) or (c.full_name or ""))
+        for c in creators if c.tg_id not in done
+    ]
 
 
 # Пинки тем, кто нажал «Погнали», но дату так и не написал: через час, потом ещё через 6.

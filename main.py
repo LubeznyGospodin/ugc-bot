@@ -87,6 +87,11 @@ async def main() -> None:
 
     asyncio.create_task(run_reach_loop(bot))
 
+    # PapKids: сбор статистики (upload-post + VK) → лист «Посты» + публичный дашборд (каждые 6 ч).
+    from bot.papkids_stats import run_papkids_stats_loop
+
+    asyncio.create_task(run_papkids_stats_loop(bot))
+
     import shutil
     logger.info("ffmpeg=%s ffprobe=%s (нужны для нормализации видео в канал)",
                 shutil.which("ffmpeg"), shutil.which("ffprobe"))

@@ -218,6 +218,16 @@ class SheetsClient:
         лист по chat_id. items=[{chat_id, channel_url, card_url}]."""
         return await self._post({"action": "report_write", "items": items})
 
+    async def creator_set(self, title: str, chat_id: int, value: str) -> dict[str, Any]:
+        """Записать значение в колонку `title` листа креаторов по chat_id (колонка
+        создаётся В КОНЦЕ). Для ответов на рассылки: видно всех, лишних откликов не плодим."""
+        return await self._post({"action": "creator_set", "title": title,
+                                 "chat_id": chat_id, "value": value})
+
+    async def creator_set_bulk(self, title: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+        """Тот же creator_set пачкой: items=[{chat_id, value}] за один проход по листу."""
+        return await self._post({"action": "creator_set", "title": title, "items": items})
+
     async def works_update(self, chat_id: int, value: str) -> dict[str, Any]:
         """Записать в лист креаторов колонку «Работы» (создаётся В КОНЦЕ листа)."""
         return await self._post({"action": "works_update", "chat_id": chat_id, "value": value})
