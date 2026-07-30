@@ -40,6 +40,13 @@ MAX_VIDEOS = 4
 # помечаем «не хватает контента» и ждём, пока креатор дошлёт.
 MIN_PHOTOS = 2
 MIN_VIDEOS = 4
+
+
+def _stash_chat() -> int | str:
+    """Куда сливать медиа при перезаливе (чтобы получить file_id). НЕ в личку админа:
+    сообщения удаляются не всегда, и в личке оставался мусор из «рандомных» фото/видео.
+    Шлём в рабочую группу креаторов; если она не задана — деваться некуда, шлём админу."""
+    return settings.photos_chat_id or settings.admin_ids[0]
 MAX_DL = 20 * 1024 * 1024  # Bot API качает file_id только до 20МБ
 
 
@@ -72,28 +79,29 @@ async def _video_ids(bot: Bot, works: list) -> list[str]:
             with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tf:
                 tf.write(data)
                 tmp = tf.name
-            out = tmp + ".h264.mp4"
+            conv = tmp + ".h264.mp4"  # ВНИМАНИЕ: не «out» — там аккумулятор file_id
             try:
-                if to_playable_mp4(tmp, out):
-                    data = open(out, "rb").read()  # H.264 + faststart
-                    src = out
+                if to_playable_mp4(tmp, conv):
+                    data = open(conv, "rb").read()  # H.264 + faststart
+                    src = conv
                 else:
                     src = tmp  # фолбэк: исходник как есть
                 dur, vw, vh = probe_dims(src)
                 thumb = make_thumb(src)
             finally:
-                for p in (tmp, out):
-                    if os.path.exists(p):
-                        os.unlink(p)
+                for _p in (tmp, conv):
+                    if os.path.exists(_p):
+                        os.unlink(_p)
             kwargs: dict = {"supports_streaming": True, "disable_notification": True}
             if vw and vh:
                 kwargs.update(width=vw, height=vh, duration=dur)
             if thumb:
                 kwargs["thumbnail"] = BufferedInputFile(thumb, "t.jpg")
-            m = await bot.send_video(settings.admin_ids[0], BufferedInputFile(data, "v.mp4"), **kwargs)
+            stash = _stash_chat()
+            m = await bot.send_video(stash, BufferedInputFile(data, "v.mp4"), **kwargs)
             vid = m.video.file_id if m.video else None
             try:
-                await bot.delete_message(settings.admin_ids[0], m.message_id)
+                await bot.delete_message(stash, m.message_id)
             except Exception:  # noqa: BLE001
                 pass
             if vid:
@@ -170,7 +178,7 @@ async def import_from_cloud(bot: Bot, tg_id: int) -> tuple[int, int]:
 
     _, have_ph, have_vd = await _load(tg_id)
     nph = nvd = 0
-    admin = settings.admin_ids[0]
+    admin = _stash_chat()
 
     for it in cloud_ph[: max(0, MAX_PHOTOS + 2 - len(have_ph))]:
         try:
@@ -262,11 +270,6 @@ async def send_placement_prompt(bot: Bot, tg_id: int) -> None:
             logger.warning("content_status failed for %s: %s", tg_id, e)
         return
 
-    await _set(tg_id, placement="pending")
-    try:
-        await sheets_client.content_status(tg_id, "готов — отправлен на утверждение")
-    except SheetsError as e:  # noqa: BLE001
-        logger.warning("content_status failed for %s: %s", tg_id, e)
     ph = photos[:MAX_PHOTOS]
     vids = await _video_ids(bot, works)  # нормализуем document→video (и кэшируем)
     # Альбом-превью ровно того, что уйдёт в канал — админ видит контент и решает.
@@ -279,15 +282,33 @@ async def send_placement_prompt(bot: Bot, tg_id: int) -> None:
         f"👤 {handle} · id {tg_id} · фото {len(ph)} + видео {len(vids)}\n\n"
         f"Разместить в канал @ugc_creatory и на сайт?"
     )
+    # Альбом и кнопки — РАЗДЕЛЬНО: если альбом не собрался (битый file_id и т.п.),
+    # заявка всё равно должна дойти до админа, иначе креатор молча выпадает из пайплайна.
+    delivered = False
     for admin_id in settings.admin_ids:
-        try:
-            if media:
+        if media:
+            try:
                 await bot.send_media_group(admin_id, media)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("placement album to %s failed: %s", admin_id, e)
+        try:
             await bot.send_message(
                 admin_id, text, reply_markup=placement_keyboard(tg_id), parse_mode="HTML"
             )
+            delivered = True
         except Exception as e:  # noqa: BLE001
             logger.warning("placement prompt to %s failed: %s", admin_id, e)
+
+    # pending ставим ТОЛЬКО если заявка реально доставлена — иначе креатор считался бы
+    # «отправленным» и больше никогда не всплыл бы.
+    if not delivered:
+        logger.error("placement %s: промпт НЕ доставлен, оставляем на повтор", tg_id)
+        return
+    await _set(tg_id, placement="pending")
+    try:
+        await sheets_client.content_status(tg_id, "готов — отправлен на утверждение")
+    except SheetsError as e:  # noqa: BLE001
+        logger.warning("content_status failed for %s: %s", tg_id, e)
 
 
 @router.callback_query(F.data.startswith("place:"))
