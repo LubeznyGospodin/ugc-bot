@@ -312,7 +312,14 @@ def wave() -> None:
                 headers={"Authorization": f"Apikey {API_KEY}"},
                 data={"user": profile, "platform[]": [platform],
                       "title": caption, "youtube_title": yt_title,
-                      "youtube_description": caption, "scheduled_date": when},
+                      "youtube_description": caption, "scheduled_date": when,
+                      # максимум охвата: категория Музыка, ru-язык, теги (поиск/фид)
+                      "categoryId": "10", "defaultLanguage": "ru",
+                      "defaultAudioLanguage": "ru",
+                      "tags[]": ["песня в подарок", "подарок", "сюрприз",
+                                 "поздравление", "песня на заказ"],
+                      # IG: имя аудио — поисковый сигнал рилсов
+                      "audio_name": "Песня в подарок"},
                 files={"video": (copy, fh, "video/mp4")},
                 timeout=300,
             )
