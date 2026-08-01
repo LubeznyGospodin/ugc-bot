@@ -2,14 +2,19 @@
 FROM python:3.11-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg tzdata \
     && rm -rf /var/lib/apt/lists/*
+
+# ВЕСЬ код посева считает время в МСК (слоты 08:00–23:00, даты отчётов).
+# Без этого контейнер живёт в UTC и публикации уезжают на 3 часа.
+ENV TZ=Europe/Moscow
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
-# видео и state — на volume
-ENV SEED_DIR=/data
+# видео и state — на volume; вывод не буферизуем, иначе прогресс не виден в логах
+ENV SEED_DIR=/data PYTHONUNBUFFERED=1
 CMD ["python", "seed_worker.py"]
