@@ -4,8 +4,8 @@
 задачу, если её слот наступил и сегодня она ещё не отрабатывала.
 
 Расписание (МСК):
+  06:00  ingest  — новые ролики креаторов из таблицы → src/ (и 15:30)
   07:00  wave    — план дня + уникализация + постановка в отложку
-  07:30  ingest  — новые ролики креаторов из таблицы → src/ (и 15:30)
   09:30  scan    — просмотры + алерты (и 12:30, 15:00, 17:30, 22:30)
   10:10  daily   — утренний сводный отчёт в ТГ
   13:00  links   — ссылки свежевышедших постов → база охвата (и 17:00, 21:00, 23:45)
@@ -33,8 +33,8 @@ MSK = timezone(timedelta(hours=3))
 # (час, минута, имя задачи)
 SCHEDULE = [
     (3, 0, "clean"),
+    (6, 0, "ingest"),   # ДО волны: свежие ролики креаторов должны попасть в план дня
     (7, 0, "wave"),
-    (7, 30, "ingest"),
     (9, 30, "scan"),
     (10, 10, "daily"),
     (12, 30, "scan"),
@@ -98,8 +98,14 @@ def _due(now: datetime, done: list[str]) -> list[str]:
 
 async def main() -> None:
     _bootstrap_state()
-    log.info("seed_worker запущен, SEED_DIR=%s, исходников=%d",
-             S.SEED_DIR, len(list((S.SEED_DIR / "src").glob("*.mp4"))))
+    have = len(list((S.SEED_DIR / "src").glob("*.mp4")))
+    log.info("seed_worker запущен, SEED_DIR=%s, исходников=%d", S.SEED_DIR, have)
+    if have < 10:  # пустой/новый volume — наполняем базу сразу, не ждём слота
+        log.info("исходников мало — стартовый ingest")
+        try:
+            await asyncio.to_thread(S.ingest)
+        except Exception:  # noqa: BLE001
+            log.error("стартовый ingest:\n%s", traceback.format_exc()[:800])
     while True:
         try:
             now = datetime.now(MSK).replace(tzinfo=None)
