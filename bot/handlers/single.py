@@ -37,6 +37,7 @@ from bot.single import (
     ensure_pipeline,
     get_pipeline,
     mark_accepted,
+    decline_pack,
     mark_dropped,
     parse_deadline,
     parse_payment,
@@ -56,6 +57,14 @@ router = Router(name="single")
 
 # В пайплайне «Сингл» НЕ редактируем сообщения «на месте» и не удаляем ответы креатора —
 # вся переписка сохраняется (просьба заказчика). Поэтому шлём обычные новые сообщения.
+
+
+def _today_msk() -> str:
+    from datetime import datetime
+
+    from bot.single import MSK
+
+    return (datetime.utcnow() + MSK).strftime("%d.%m")
 
 
 def _mirror(chat_id: int, fields: dict) -> None:
@@ -318,10 +327,14 @@ async def pack_go(call: CallbackQuery, state: FSMContext, bot: Bot):
 async def pack_no(call: CallbackQuery, state: FSMContext, bot: Bot):
     await call.answer()
     await ensure_pipeline(call.from_user.id)
-    await mark_dropped(call.from_user.id)
+    dropped = await decline_pack(call.from_user.id)
     _pack_answer(call.from_user.id, "❌ не интересно")
     await state.clear()
     await bot.send_message(call.message.chat.id, PACK_NO_TEXT)
+    if not dropped:  # остался с активным сроком по 1-й волне — админам это важно
+        await _notify_admins(
+            bot, f"ℹ️ {await _who(call.from_user.id, call.from_user)} — отказ от донабора, "
+                 "но срок по «Синглу» в силе: напоминания продолжаются.")
 
 
 # ── Вторая волна: перезалив + новый ролик ─────────────────────────────────────
@@ -390,8 +403,10 @@ async def wave2_date(message: Message, state: FSMContext, bot: Bot):
 
 @router.callback_query(F.data.in_({"w2:still_on", "single:still_on"}))
 async def wave_still_on(call: CallbackQuery, bot: Bot):
-    """«Всё в силе» — просто подтверждение, этап не меняем."""
+    """«Всё в силе» — этап не меняем, но фиксируем ответ в таблице."""
     await call.answer("Принято 👍")
+    key = "wave2" if call.data.startswith("w2:") else "wave1"
+    _mirror(call.from_user.id, {key: f"✅ всё в силе {_today_msk()}"})
     await bot.send_message(call.message.chat.id, WAVE2_STILL_ON_TEXT)
 
 
@@ -405,6 +420,9 @@ async def wave_drop(call: CallbackQuery, state: FSMContext, bot: Bot):
         _mirror(call.from_user.id, {"wave2": "отказ"})
     else:
         await mark_dropped(call.from_user.id)
+        # без этого отказ по 1-й волне виден только в ТГ-уведомлении админам,
+        # а в таблице человек неотличим от «просто молчит»
+        _mirror(call.from_user.id, {"wave1": f"❌ отказ {_today_msk()}"})
     await state.clear()
     await bot.send_message(call.message.chat.id, wave2_drop_text(await _name(call.from_user.id, call.from_user)))
     await _notify_admins(bot, f"❌ {await _who(call.from_user.id, call.from_user)} — отказ по волне {wave}.")

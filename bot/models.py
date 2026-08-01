@@ -143,6 +143,28 @@ class SinglePipeline(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class ScheduledPost(Base):
+    """Отложенная рассылка по базе: во сколько, что и с каким вложением.
+
+    Живёт в БД (не в памяти) — переживает передеплой. Статусы: pending → sending → done.
+    В `sending` задание переводится ДО первой отправки: если бот упадёт посреди рассылки,
+    оно не запустится заново и не задвоит сообщения (доотправку решает админ руками).
+    """
+
+    __tablename__ = "scheduled_posts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_at: Mapped[datetime] = mapped_column(DateTime, index=True)  # UTC
+    text: Mapped[str] = mapped_column(Text)          # {name} — имя получателя
+    file_id: Mapped[str | None] = mapped_column(Text, nullable=True)  # документ, если нужен
+    file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    sent: Mapped[int] = mapped_column(Integer, default=0)
+    failed: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    done_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class ReachRow(Base):
     """Охват по одному ролику (проект «Сингл»). Храним последнее УСПЕШНОЕ значение,
     чтобы при разовом сбое парсинга не терять цифру — показываем прошлую + пометку ⚠️."""

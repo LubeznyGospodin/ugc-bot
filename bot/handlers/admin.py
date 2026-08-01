@@ -235,6 +235,57 @@ async def wave2_preview(event, bot: Bot):
     )
 
 
+@router.message(Command("scheduled"))
+async def scheduled_list(message: Message):
+    """Что стоит в очереди на отложенную рассылку (время — МСК)."""
+    if not _admin_only(message.from_user.id):
+        return
+    from datetime import timedelta
+
+    from bot.models import ScheduledPost
+
+    async with get_session() as s:
+        jobs = (await s.execute(
+            select(ScheduledPost).order_by(ScheduledPost.run_at.desc()).limit(10)
+        )).scalars().all()
+    if not jobs:
+        await message.answer("Отложенных рассылок нет.")
+        return
+    icon = {"pending": "🕐", "sending": "📤", "done": "✅"}
+    lines = ["📬 <b>Отложенные рассылки</b> (время МСК)\n"]
+    for j in jobs:
+        when = (j.run_at + timedelta(hours=3)).strftime("%d.%m %H:%M")
+        tail = f" · доставлено {j.sent}, не удалось {j.failed}" if j.status == "done" else ""
+        lines.append(f"{icon.get(j.status, '•')} <b>#{j.id}</b> · {when}"
+                     f"{f' · 📎 {j.file_name}' if j.file_name else ''}{tail}\n"
+                     f"<i>{j.text[:80]}…</i>")
+    lines.append("\nОтменить: <code>/scheduled_cancel ID</code>")
+    await message.answer("\n".join(lines))
+
+
+@router.message(Command("scheduled_cancel"))
+async def scheduled_cancel(message: Message):
+    if not _admin_only(message.from_user.id):
+        return
+    from bot.models import ScheduledPost
+
+    parts = (message.text or "").split()
+    if len(parts) < 2 or not parts[1].isdigit():
+        await message.answer("Формат: <code>/scheduled_cancel 1</code>")
+        return
+    async with get_session() as s:
+        job = await s.get(ScheduledPost, int(parts[1]))
+        if job is None:
+            await message.answer("Нет такой рассылки.")
+            return
+        if job.status != "pending":
+            await message.answer(f"Рассылка #{job.id} уже в статусе «{job.status}» — отменить нельзя.")
+            return
+        await s.delete(job)
+        await s.commit()
+    await message.answer(f"❌ Рассылка #{parts[1]} отменена.")
+
+
 # ── Донабор по базе: UGC-пак за ролик к 3.08 ──────────────────────────────────
 @router.message(Command("pack_test"))
 async def pack_test(message: Message, bot: Bot):
@@ -391,6 +442,8 @@ _COMMANDS_TEXT = (
     "/admin — открыть админ-меню\n"
     "/wave2 · /pack — те же рассылки командой\n"
     "/wave2_test · /pack_test — прогон рассылки на себе\n"
+    "/scheduled — что стоит в очереди на отложенную рассылку\n"
+    "/scheduled_cancel ID — отменить запланированную рассылку\n"
     "/nudge_backlog — пуш-напоминание тем, кто зашёл, но не зарегался\n"
     "/photos_to_group — отправить сохранённые фото креаторов в рабочую группу\n"
     "/chatid — показать id текущего чата (для настройки группы)\n"

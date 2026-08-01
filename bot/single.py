@@ -227,6 +227,24 @@ async def set_wave2(chat_id: int, status: str, dl: date | None = None) -> None:
             await s.commit()
 
 
+async def decline_pack(chat_id: int) -> bool:
+    """Отказ от ДОНАБОРА (UGC-пак). Активную 1-ю волну не трогаем!
+
+    Раньше здесь звали mark_dropped, и человек с уже взятым сроком по «Синглу»
+    вылетал из напоминаний, отказавшись всего лишь от бонусного пака
+    (так потеряли дожим Василисы Некрасовой 31.07). → True, если сняли с пайплайна.
+    """
+    async with get_session() as s:
+        p = (await s.execute(select(SinglePipeline).where(SinglePipeline.chat_id == chat_id))).scalar_one_or_none()
+        if p and p.stage == "producing" and p.deadline and not p.links:
+            return False  # у него живой дедлайн по основной волне — дожимаем дальше
+        if p:
+            p.stage = "dropped"
+            p.updated_at = datetime.utcnow()
+            await s.commit()
+        return True
+
+
 async def mark_dropped(chat_id: int) -> None:
     """1-я волна: «не буду участвовать» — снимаем с дожима (луп шлёт только producing)."""
     async with get_session() as s:

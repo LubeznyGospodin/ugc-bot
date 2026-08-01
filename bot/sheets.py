@@ -248,6 +248,13 @@ class SheetsClient:
         items = payload if isinstance(payload, list) else payload.get("items", [])
         return [i for i in items if isinstance(i, dict)]
 
+    async def grid_dump(self, sheet_id: str, sheet_name: str) -> list[list[Any]]:
+        """Все значения листа как есть (Apps Script doGridDump_)."""
+        payload = await self._post(
+            {"action": "grid_dump", "sheet_id": sheet_id, "sheet_name": sheet_name}
+        )
+        return payload.get("values") or []
+
     async def reach_write(self, sheet_id: str, rows: list[dict], total: int) -> dict[str, Any]:
         """Записать охваты в клиентскую таблицу (openById в Apps Script).
 

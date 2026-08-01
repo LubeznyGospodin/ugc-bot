@@ -66,6 +66,13 @@ class Settings:
 
     # Ассистент (Арина, Днепр): ей уходят задачи прогрева аккаунтов и запросы на аудит.
     assistant_id: str = field(default_factory=lambda: os.getenv("ASSISTANT_ID", "1197101122").strip())
+    # Разбор выгрузок данных аккаунта (что реально делалось) — вердикт от Claude.
+    anthropic_api_key: str = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", "").strip())
+    # Лист «Аккаунты» рабочей таблицы — источник правды по логинам и датам создания.
+    accounts_sheet_id: str = field(default_factory=lambda: os.getenv(
+        "ACCOUNTS_SHEET_ID", "1Hoqi-lLxyJtApNR6WGN59Rwz0u0hLPqFuDE-fQbzYyI").strip())
+    # Какие проекты из этого листа ведёт ассистент (через запятую).
+    warmup_projects: str = field(default_factory=lambda: os.getenv("WARMUP_PROJECTS", "Сингл").strip())
 
     # Сбор охватов по роликам (проект «Сингл») → клиентская таблица.
     youtube_api_key: str = field(default_factory=lambda: os.getenv("YOUTUBE_API_KEY", "").strip())
@@ -83,6 +90,9 @@ class Settings:
     papkids_sheet_id: str = field(default_factory=lambda: os.getenv("PAPKIDS_SHEET_ID", "").strip())
     papkids_group_id: str = field(default_factory=lambda: os.getenv("PAPKIDS_GROUP_ID", "").strip())
     papkids_topic_id: str = field(default_factory=lambda: os.getenv("PAPKIDS_TOPIC_ID", "").strip())
+    # куда слать утренний отчёт по статистике (пусто — админам в личку)
+    papkids_report_chat: str = field(default_factory=lambda: os.getenv("PAPKIDS_REPORT_CHAT", "").strip())
+    papkids_report_topic: str = field(default_factory=lambda: os.getenv("PAPKIDS_REPORT_TOPIC", "").strip())
 
     # Пороги confidence для дедупа (см. doLookup_ в Apps Script — держим синхронно)
     lookup_auto_match_threshold: float = 0.92
