@@ -62,6 +62,11 @@ async def main() -> None:
         logger.warning("FSM storage: откат на память (%s)", e)
         storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
+    # Прогрев — раньше root: у него свои /wu* и фото от ассистента, которые иначе
+    # перехватят generic-обработчики регистрации.
+    from bot.warmup import router as warmup_router
+
+    dp.include_router(warmup_router)
     dp.include_router(root_router)
 
     # Фоновая синхронизация таблица → БД (бренды и т.д.) — чтения из БД мгновенны.
@@ -91,6 +96,11 @@ async def main() -> None:
     from bot.papkids_stats import run_papkids_stats_loop
 
     asyncio.create_task(run_papkids_stats_loop(bot))
+
+    # Прогрев аккаунтов: задачи ассистенту в 10:00, аудит в 15:00, отчёт админам в 20:00.
+    from bot.warmup import run_warmup_loop
+
+    asyncio.create_task(run_warmup_loop(bot))
 
     import shutil
     logger.info("ffmpeg=%s ffprobe=%s (нужны для нормализации видео в канал)",

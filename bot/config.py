@@ -64,6 +64,9 @@ class Settings:
     # раз в несколько минут. Если пинги пропали (хостинг встал) — монитор шлёт алерт.
     heartbeat_url: str = field(default_factory=lambda: os.getenv("HEARTBEAT_URL", "").strip())
 
+    # Ассистент (Арина, Днепр): ей уходят задачи прогрева аккаунтов и запросы на аудит.
+    assistant_id: str = field(default_factory=lambda: os.getenv("ASSISTANT_ID", "1197101122").strip())
+
     # Сбор охватов по роликам (проект «Сингл») → клиентская таблица.
     youtube_api_key: str = field(default_factory=lambda: os.getenv("YOUTUBE_API_KEY", "").strip())
     vk_token: str = field(default_factory=lambda: os.getenv("VK_TOKEN", "").strip())
