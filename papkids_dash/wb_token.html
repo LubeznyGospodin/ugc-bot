@@ -1,0 +1,213 @@
+<title>PapKids — Ключ WB для отчётов</title>
+<style>
+/*__FONTS__*/
+:root{
+  --cream:#F0ECE7; --card:#FDFDFD; --card2:#F7F3EC;
+  --ink:#424023; --soft:#797650; --taupe:#AB917A;
+  --sage:#6C7B66; --sage-deep:#5A6955; --gold:#D9A84E; --gold-soft:#E8C88A;
+  --line:#E2DBD0; --shadow:0 2px 6px rgba(66,64,35,.06),0 14px 40px rgba(66,64,35,.08);
+  --head:'Nunito',system-ui,sans-serif; --script:'Caveat',cursive;
+}
+*{box-sizing:border-box}
+body{margin:0;background:
+  radial-gradient(900px 420px at 85% -5%, rgba(108,123,102,.10), transparent 60%),
+  radial-gradient(700px 380px at -10% 20%, rgba(217,168,78,.10), transparent 55%),
+  var(--cream);
+  color:var(--ink);font-family:var(--head);line-height:1.6;-webkit-font-smoothing:antialiased;}
+.wrap{max-width:820px;margin:0 auto;padding:36px 20px 70px;}
+
+/* шапка */
+.hero{display:flex;align-items:center;gap:22px;flex-wrap:wrap;margin-bottom:6px;}
+.hero img{width:96px;height:96px;border-radius:50%;box-shadow:var(--shadow);flex:none;}
+.hero h1{font-weight:800;font-size:clamp(26px,5.2vw,40px);line-height:1.05;margin:0;text-transform:uppercase;}
+.hero .tag{font-family:var(--script);font-size:clamp(21px,3.4vw,28px);color:var(--sage);margin:4px 0 0;}
+.pills{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 6px;}
+.pill{display:inline-flex;align-items:center;gap:8px;background:var(--card);border:1.5px solid var(--line);
+  border-radius:999px;padding:7px 15px;font-weight:700;font-size:13px;box-shadow:var(--shadow);}
+.pill .dot{width:8px;height:8px;border-radius:50%;background:var(--sage);}
+.pill.gold{border-color:var(--gold-soft);color:#8a6c22;background:#fdf8ec;}
+
+/* секции */
+.slab{display:flex;align-items:center;gap:14px;margin:34px 0 14px;}
+.slab h2{font-weight:800;text-transform:uppercase;font-size:clamp(16px,3vw,20px);margin:0;letter-spacing:.03em;}
+.slab .scr{font-family:var(--script);font-size:21px;color:var(--taupe);}
+.slab::after{content:"";flex:1;height:2px;border-radius:2px;
+  background:repeating-linear-gradient(90deg,var(--gold-soft) 0 14px,transparent 14px 26px);}
+
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:24px;
+  padding:18px 22px;box-shadow:var(--shadow);}
+.card p{margin:0 0 10px}
+.card p:last-child{margin-bottom:0}
+
+/* шаги */
+.steps{display:flex;flex-direction:column;gap:12px;counter-reset:s;}
+.step{display:grid;grid-template-columns:46px 1fr;gap:16px;align-items:start;
+  background:var(--card);border:1.5px solid var(--line);border-radius:22px;padding:16px 20px;box-shadow:var(--shadow);}
+.step::before{counter-increment:s;content:counter(s);
+  width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,var(--gold),#c9932f);color:#fff;font-weight:800;font-size:20px;}
+.step h3{margin:8px 0 4px;font-size:16.5px;font-weight:800;line-height:1.3;}
+.step p{margin:0;font-size:14.5px;color:var(--soft);font-weight:600;}
+.step p + p{margin-top:6px}
+.step .scr{font-family:var(--script);font-size:19px;color:var(--sage);}
+kbd{background:var(--card2);border:1.5px solid var(--line);border-radius:8px;padding:2px 9px;
+  font-family:var(--head);font-weight:800;font-size:13.5px;color:var(--ink);white-space:nowrap;display:inline-block;}
+.check{background:#fdf8ec;border:1.5px dashed var(--gold-soft);border-radius:16px;
+  padding:10px 16px;margin-top:10px;font-size:14px;font-weight:700;color:#8a6c22;}
+.calm{background:#f2f5f0;border:1.5px solid #d9e0d3;border-radius:16px;
+  padding:10px 16px;margin-top:10px;font-size:14px;font-weight:700;color:var(--sage-deep);}
+
+/* важное */
+.warn{background:linear-gradient(135deg,#68785f,#57684f);color:#FDFDFD;border:none;}
+.warn h3{color:#fff;margin:0 0 10px;text-transform:uppercase;font-size:15px;letter-spacing:.03em;}
+.warn ul{margin:0;padding-left:20px}
+.warn li{margin-bottom:8px;font-size:14.5px;font-weight:600}
+.warn li:last-child{margin-bottom:0}
+.warn b{color:var(--gold-soft)}
+
+/* FAQ */
+.faq{display:flex;flex-direction:column;gap:10px}
+.q{background:var(--card);border:1.5px solid var(--line);border-radius:20px;padding:14px 20px;box-shadow:var(--shadow);}
+.q b{display:block;font-size:15px;margin-bottom:3px}
+.q span{font-size:14.5px;color:var(--soft);font-weight:600}
+
+footer{margin-top:40px;border-top:2px dashed var(--gold-soft);padding-top:16px;
+  display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--soft);font-size:13px;font-weight:600;}
+footer .scr{font-family:var(--script);font-size:19px;color:var(--sage);}
+@media(max-width:520px){
+  .step{grid-template-columns:38px 1fr;gap:12px;padding:14px 16px}
+  .step::before{width:38px;height:38px;font-size:17px}
+}
+</style>
+
+<div class="wrap">
+  <div class="hero">
+    <img src="data:image/png;base64,__LOGO__" alt="PapKids">
+    <div>
+      <h1>Ключ WB<br>для отчётов</h1>
+      <div class="tag">инструкция для Ксении 🌿</div>
+    </div>
+  </div>
+  <div class="pills">
+    <span class="pill"><span class="dot"></span> 5 минут</span>
+    <span class="pill">делается один раз</span>
+    <span class="pill gold">ничего сломать нельзя</span>
+  </div>
+
+  <div class="slab"><h2>Зачем это</h2><span class="scr">коротко</span></div>
+  <div class="card">
+    <p>Мы считаем, сколько людей посмотрели ролики PapKids. Но самое интересное — что было <b>дальше</b>:
+      сколько человек зашли в карточку товара, сколько заказали и выкупили.</p>
+    <p>Эти цифры живут в вашем кабинете Wildberries. Чтобы они попадали в отчёт сами (а не переносились руками),
+      нужен <b>токен</b> — это как запасной ключ от кабинета, который вы выдаёте нам.</p>
+    <p>Мы попросим ключ <b>«только на чтение»</b>: по нему можно <b>только смотреть цифры</b>.
+      Ни поменять цены, ни тронуть товары, ни вывести деньги по нему <b>невозможно</b>.</p>
+  </div>
+
+  <div class="slab"><h2>Что понадобится</h2><span class="scr">перед стартом</span></div>
+  <div class="card">
+    <p>💻 Компьютер (на телефоне кабинет неудобный).</p>
+    <p>🔑 Вход в кабинет продавца <b>seller.wildberries.ru</b> — под тем логином, на который оформлен магазин.</p>
+    <p>📱 Телефон рядом: WB может прислать код подтверждения.</p>
+    <div class="calm">Важно: создать ключ может только <b>владелец кабинета</b>. Если кнопки из шага 4 у вас нет —
+      значит вход не владельца, напишите нам, разберёмся.</div>
+  </div>
+
+  <div class="slab"><h2>Пошагово</h2><span class="scr">просто повторяйте</span></div>
+  <div class="steps">
+
+    <div class="step"><div>
+      <h3>Заходим в кабинет</h3>
+      <p>Открываем <kbd>seller.wildberries.ru</kbd> и входим как обычно.</p>
+    </div></div>
+
+    <div class="step"><div>
+      <h3>Открываем настройки профиля</h3>
+      <p>В <b>правом верхнем углу</b> нажимаем на своё имя (или номер телефона) → в выпавшем меню выбираем
+        <kbd>Настройки</kbd>.</p>
+    </div></div>
+
+    <div class="step"><div>
+      <h3>Находим раздел с ключами</h3>
+      <p>Внутри настроек ищем вкладку <kbd>Доступ к API</kbd>.</p>
+      <p class="scr">у WB бывают разные названия — подойдёт и «Доступ к новому API», и «Интеграции по API». Главное — слово API.</p>
+    </div></div>
+
+    <div class="step"><div>
+      <h3>Жмём «Создать новый токен»</h3>
+      <p>Кнопка обычно справа сверху в этом разделе.</p>
+    </div></div>
+
+    <div class="step"><div>
+      <h3>Выбираем тип: «Персональный»</h3>
+      <p>Если WB спросит тип ключа — выбираем <kbd>Персональный</kbd> (он же «для своих программ»).</p>
+      <p>Если такого вопроса нет — просто идём дальше, всё в порядке.</p>
+    </div></div>
+
+    <div class="step"><div>
+      <h3>Пишем название</h3>
+      <p>В поле «Название» пишем: <kbd>PapKids Packman</kbd>. Это просто подпись, чтобы потом было понятно,
+        чей это ключ.</p>
+    </div></div>
+
+    <div class="step"><div>
+      <h3>Ставим ровно две галочки</h3>
+      <p>В списке разделов отмечаем <kbd>Аналитика</kbd> и <kbd>Статистика</kbd>.</p>
+      <div class="check">Всё остальное — <b>не трогаем</b>. Чем меньше галочек, тем безопаснее ключ.</div>
+    </div></div>
+
+    <div class="step"><div>
+      <h3>Включаем «Только на чтение»</h3>
+      <p>Если рядом есть переключатель <kbd>Только на чтение</kbd> — <b>включаем его</b>.
+        Это и есть та самая защита: ключ сможет только смотреть.</p>
+      <p>Галочку <kbd>Тестовый</kbd> (если попадётся) — <b>не ставим</b>.</p>
+    </div></div>
+
+    <div class="step"><div>
+      <h3>Нажимаем «Создать»</h3>
+      <p>WB покажет длинную строку из букв и цифр — это и есть ключ. Рядом будет кнопка
+        <kbd>Скопировать</kbd> — нажимаем её.</p>
+      <div class="check">⚠️ Строка показывается <b>всего один раз</b>. Закрыли окно, не скопировав, — не страшно:
+        удаляем этот токен и делаем новый с шага 4.</div>
+    </div></div>
+
+    <div class="step"><div>
+      <h3>Отправляем нам</h3>
+      <p>Вставляем скопированное в личные сообщения нам в Telegram и пишем «ключ WB».</p>
+      <p>Мы сразу подключим его и ответим «принято» — после этого <b>удалите сообщение с ключом</b> в чате.</p>
+      <p class="scr">и всё, готово 🌿</p>
+    </div></div>
+
+  </div>
+
+  <div class="slab"><h2>Важно помнить</h2><span class="scr">три вещи</span></div>
+  <div class="card warn">
+    <h3>Три вещи</h3>
+    <ul>
+      <li><b>Ключ = пароль.</b> Не пересылайте его никому, кроме нас, и не выкладывайте в общие чаты.</li>
+      <li><b>Ключ живёт 180 дней.</b> Потом перестанет работать — WB предупредит за 3 дня, мы напомним и попросим
+        сделать новый (там есть кнопка «Дублировать» — она создаёт такой же).</li>
+      <li><b>Передумали — удалите.</b> В том же разделе «Доступ к API» ключ можно удалить в любой момент,
+        одной кнопкой. Магазин это никак не затронет.</li>
+    </ul>
+  </div>
+
+  <div class="slab"><h2>Частые вопросы</h2><span class="scr">без паники</span></div>
+  <div class="faq">
+    <div class="q"><b>А вы увидите мои деньги?</b>
+      <span>Нет. Галочки «Финансы» и «Документы» мы не просим. Только цифры по товарам:
+        переходы в карточку, заказы, выкупы, выручка по артикулам.</span></div>
+    <div class="q"><b>А можно случайно что-то сломать?</b>
+      <span>Нет. Ключ «только на чтение» физически не умеет ничего менять — ни цены, ни остатки, ни карточки.</span></div>
+    <div class="q"><b>Я нажала не туда / создала лишний ключ</b>
+      <span>Ничего страшного. Удалите его в разделе «Доступ к API» и создайте заново с шага 4.
+        Лишние ключи ни на что не влияют.</span></div>
+    <div class="q"><b>Не нашла нужную кнопку</b>
+      <span>Сделайте скриншот экрана и пришлите нам — подскажем, куда нажать. WB иногда переставляет пункты меню.</span></div>
+  </div>
+
+  <footer>
+    <span>PapKids × Packman Production</span>
+    <span class="scr">спасибо, что помогаете считать 🌿</span>
+  </footer>
+</div>

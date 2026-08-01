@@ -5,3 +5,10 @@ __pycache__
 data
 AGENT_LOG.md
 .DS_Store
+call_control
+outreach
+*.log
+big_video_map.json
+HANDOFF*.md
+council-*
+apps_script

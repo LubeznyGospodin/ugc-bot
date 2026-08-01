@@ -26,6 +26,7 @@ video.save в сообщество + отложенный wall.post (юзер-т
 
 import asyncio
 import json
+import os
 import random
 import sys
 import time
@@ -35,7 +36,8 @@ from pathlib import Path
 import requests
 from dotenv import dotenv_values
 
-ENV = dotenv_values(Path(__file__).parent / ".env")
+# на Railway ключи в окружении, локально — в .env
+ENV = {**dotenv_values(Path(__file__).parent / ".env"), **os.environ}
 API_KEY = ENV["UPLOAD_POST_API_KEY"]
 UPLOAD_URL = "https://api.upload-post.com/api/upload"
 WEBHOOK = ("https://script.google.com/macros/s/AKfycbyDWDeOWwdQFT-UHJSdBaHvcXCNF4Dy"
@@ -43,7 +45,10 @@ WEBHOOK = ("https://script.google.com/macros/s/AKfycbyDWDeOWwdQFT-UHJSdBaHvcXCNF
 SECRET = "YfNLxVxjB5UddfEpf-xfcRjC_ih4MusfJg1QDxVt4o0"
 SHEET_ID = "14iH1s6bctklEuQ5kVGgjolvrP4XAKPScZkhTcz_-qRY"
 
-SEED_DIR = Path.home() / "Desktop" / "singl_seed"
+# На Railway — volume (/data), локально — папка на Рабочем столе.
+SEED_DIR = Path(os.environ.get("SEED_DIR") or (Path.home() / "Desktop" / "singl_seed"))
+(SEED_DIR / "src").mkdir(parents=True, exist_ok=True)
+(SEED_DIR / "out").mkdir(parents=True, exist_ok=True)
 STATE = SEED_DIR / "state.json"
 
 # старт кампании посева: посты аккаунтов ДО этого момента — креаторские/упаковочные,
@@ -331,7 +336,8 @@ def ingest() -> None:
         if not dst.exists():
             try:
                 r = subprocess.run(
-                    ["yt-dlp", "-q", "--no-warnings", "--socket-timeout", "20",
+                    [sys.executable, "-m", "yt_dlp",
+                     "-q", "--no-warnings", "--socket-timeout", "20",
                      "--retries", "2", "-f", "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/b",
                      "--merge-output-format", "mp4", "-o", str(dst), url],
                     capture_output=True, text=True, timeout=180)
@@ -418,7 +424,6 @@ def links() -> None:
 
 def wave() -> None:
     """Спланировать и зашедулить публикации на сегодня."""
-    sys.path.insert(0, str(Path.home() / "Desktop" / "uniq_bot"))
     from uniquify import probe, uniquify
 
     state = load_state()

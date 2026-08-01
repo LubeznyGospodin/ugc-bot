@@ -1,0 +1,78 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LLM Council — Tilda → код?</title>
+<style>
+:root{--bg:#fff;--ink:#1a1a1a;--mut:#666;--line:#e6e6e6;--acc:#2b6cb0;--ok:#2f855a;--warn:#c05621;--clash:#b7791f}
+*{box-sizing:border-box}body{margin:0;background:#f4f5f7;color:var(--ink);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:860px;margin:0 auto;padding:28px 18px}
+.card{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:22px 24px;margin:0 0 18px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+h1{font-size:22px;margin:0 0 6px}h2{font-size:15px;letter-spacing:.04em;text-transform:uppercase;color:var(--mut);margin:0 0 12px}
+.q{color:var(--mut);font-size:15px}
+.verdict h3{margin:18px 0 6px;font-size:16px}
+.tag{display:inline-block;font-size:12px;font-weight:600;padding:2px 9px;border-radius:20px;margin-right:6px}
+.t-ok{background:#e6fffa;color:var(--ok)}.t-clash{background:#fffaf0;color:var(--clash)}.t-warn{background:#fffaf0;color:var(--warn)}
+.rec{background:#ebf8ff;border-left:4px solid var(--acc);padding:14px 16px;border-radius:8px;margin-top:8px}
+.first{background:#f0fff4;border-left:4px solid var(--ok);padding:14px 16px;border-radius:8px;font-weight:600}
+.grid{display:grid;grid-template-columns:1fr;gap:8px;margin:8px 0}
+.row{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:8px}
+.who{font-weight:700;min-width:150px}.pos{font-size:14px;color:#333}
+.mig{border-left:3px solid var(--ok)}.stay{border-left:3px solid var(--warn)}
+details{border:1px solid var(--line);border-radius:8px;margin:8px 0;padding:0 14px}
+summary{cursor:pointer;font-weight:600;padding:12px 0}
+details p{margin:0 0 12px;font-size:15px}
+footer{color:var(--mut);font-size:13px;text-align:center;padding:8px 0 24px}
+.spectrum{font-size:14px;color:#444;margin-top:6px}
+</style></head><body><div class="wrap">
+
+<div class="card"><h1>Совет: уходить с Tilda на собственный код?</h1>
+<p class="q">Каталог UGC-креаторов Packman (~119 карточек на Tilda) — мигрировать на кастомный сайт из-за ненадёжной автоматизации Tilda, или чинить Tilda? Данные уже в Postgres + Selectel + Sheets; бот на Railway постит карточки в канал по аппруву.</p></div>
+
+<div class="card verdict"><h2>Вердикт председателя</h2>
+
+<h3>Где совет согласен <span class="tag t-ok">высокая уверенность</span></h3>
+<ul>
+<li><b>Не строить «платформу/маркетплейс».</b> Видение «стать маркетплейсом» рецензенты единогласно назвали переусложнением для каталога из 119 карточек.</li>
+<li><b>Боль — это ОДИН шаг публикации, а не платформа Tilda.</b> Бот, БД, Selectel уже работают. Ломается только создание карточки.</li>
+<li><b>Правильная форма — рендерить БД, которая у тебя уже есть,</b> серверным HTML из <i>существующего</i> Railway-сервиса. Публикация = флаг в БД (<code>UPDATE</code>), а не UI-автоматизация.</li>
+<li><b>301-редиректы на 119 старых URL</b> — обязательно, не терять индексацию.</li>
+<li><b>«Кастомный код = лучше SEO» — миф.</b> Ранжирует контент/скорость/ссылки, а не рендерер. Tilda индексируется нормально.</li>
+</ul>
+
+<h3>Где совет спорит <span class="tag t-clash">развилка</span></h3>
+<div class="grid">
+<div class="row mig"><div class="who">Executor / First&nbsp;Principles</div><div class="pos">Мигрировать <b>только слой рендера</b> — публикация станет надёжной (UPDATE вместо UI-гэмбла). 2–3 дня.</div></div>
+<div class="row mig"><div class="who">Expansionist</div><div class="pos">Мигрировать и разворачивать в платформу (маркетплейс) — <i>отклонено рецензентами как overreach</i>.</div></div>
+<div class="row stay"><div class="who">Contrarian / Outsider</div><div class="pos">Боль = разовый импорт + баг интеграции. Может, не переезжать вовсе: держать Tilda как ранжируемую оболочку + JSON-эмбед из Postgres, либо просто починить один синк.</div></div>
+</div>
+<p class="spectrum"><b>Суть спора:</b> код-каталог <i>надёжнее</i> автопубликует (да — публикация = UPDATE) ИЛИ просто <i>переносит боль</i> в хостинг/аптайм/SEO-поддержку (Contrarian)?</p>
+
+<h3>Слепые пятна, что поймал разбор <span class="tag t-warn">важно</span></h3>
+<ul>
+<li><b>Никто не измерил сначала.</b> Открыть Search Console / аналитику по packman-prod.ru: сколько из 119 страниц в индексе, есть ли органический трафик и лиды с поиска. Эта одна цифра решает всё.</li>
+<li><b>Кто обслуживает долгосрочно?</b> Нетехнический владелец + ИИ-агент. Что построено — должно оставаться тривиально управляемым, иначе сгниёт.</li>
+<li><b>Гибрид «headless Tilda»</b> (оставить ранжируемую оболочку, впрыснуть данные из Postgres) — недоисследован.</li>
+</ul>
+
+<h3>Рекомендация</h3>
+<div class="rec"><b>Мигрировать СЛОЙ РЕНДЕРА (план Executor), НЕ маркетплейс.</b> Код-каталог на твоём же стеке — правильный ход, потому что превращает публикацию из ненадёжной UI-автоматизации в одну строку <code>UPDATE</code> — это и есть реально решаемая проблема. Но сначала — 30-минутная проверка трафика: если у Tilda-страниц есть органика → мигрировать бережно с 301 на всё; если трафик ~нулевой (вероятно — настоящий продукт это Telegram-канал) → строить код-каталог всё равно (дёшево, убивает боль Tilda навсегда), но без агонии по SEO — просто 301 старых URL. Масштаб «маркетплейс» — отдельное бизнес-решение, не часть миграции.</div>
+
+<h3>Первый шаг</h3>
+<div class="first">Открыть Google Search Console (или аналитику) по packman-prod.ru и посмотреть: сколько из 119 /ugc_creators-страниц в индексе и сколько органического трафика/лидов они реально дают. Эта цифра определяет — бережная SEO-миграция или «просто пересобрать дёшево + 301».</div>
+</div>
+
+<div class="card"><h2>Полные ответы советников</h2>
+<details><summary>🔴 Контрарианец — «чинишь то, что делаешь раз в выходной»</summary><p>Боль реальна, но вывод — нелогичен: ты перестраиваешь платформу, чтобы избежать разовой задачи. Импорт 119 карточек = выходной ручных кликов; дальше ~5 креаторов/мес руками. SEO — риск даунгрейда, не апгрейд (Tilda уже ранжирует, отдаёт CDN/schema/оптимизацию картинок; «лучше SEO от кода» — вера; 301 на 119 страниц рискует уронить ранги). Кто чинит в 3 ночи? Нетехнический владелец + ИИ-агент = протухшие сертификаты, сломанные деплои, CVE. Self-hosting = обязательство под видом контроля. Узкое место — ОДНА интеграция. Варианты: (1) Tilda как ранжируемая оболочка + статический JSON-эмбед из Postgres; (2) если уходить — read-only SSG, сперва 301.</p></details>
+<details><summary>🧭 Первопринципщик — «какой билдер? никакой»</summary><p>Две работы прячутся в «сайте»: A (покупатель смотрит→пишет) уже идёт через Telegram; B (индексация Google/SEO) — единственное, что заставляет публичную страницу существовать. Реальный вопрос не «Tilda vs код», а: самое дешёвое, что делает 119 карточек индексируемыми И обновляемыми ботом. Это НЕ билдер сайтов (билдеры для людей, кликающих UI — ровно тот слой, что воюет с ботом). Минимум: бот уже пишет в Postgres+S3 → добавить шаг генерации статики → 119 статических страниц обгонят Tilda, почти бесплатно, публикация = git push. Сохранить URL (301).</p></details>
+<details><summary>🚀 Экспансионист — «это не каталог, это маркетплейс»</summary><p>Да, мигрировать — в платформу. Postgres = слой инвентаря под продуктами: программное SEO (119 × города × ниши = тысячи long-tail страниц), бренд-дашборд/маркетплейс с транзакционной комиссией, публикация бота = POST /creators, движок мэтчинга, API+виджет → стать инфраструктурой. Стек: Next.js (SSG/ISR) + Postgres + S3 + тонкий FastAPI. Не потерять: 301 слаги, индексируемый контент, бот-пайплайн. 10x = Packman становится маркетплейсом своей категории.</p></details>
+<details><summary>👁 Аутсайдер — «а сайт вообще нужен?»</summary><p>Никто не сказал, КТО заходит на packman-prod.ru/ugc_creators и зачем. «Лучше SEO от кода» — миф (Google ранжирует контент/скорость/ссылки, не рендерер; Tilda индексируется). 119 почти одинаковых профилей = тонкий контент, редко ранжируется. Боль — баг интеграции, не приговор платформе; починить один синк дешевле, чем перестроить+хостить+поддерживать вечно. Незаданный вопрос: сайт вообще приносит бизнес, или регистрации/дискавери/аппрувы все в Telegram (сайт = зеркало тщеславия)? Сперва измерь трафик. Если ~ноль — удалить, а не перестраивать.</p></details>
+<details><summary>⚙️ Исполнитель — «отрендерь БД, что уже есть. 2–3 дня»</summary><p>Мигрировать только слой рендера, не трогая бот/БД/Selectel. (1) GET /ugc_creators = один FastAPI-роут в существующем Railway-сервисе, Jinja2 серверный HTML (SEO готово, без React/Node), карточки = цикл по строкам, фото из Selectel. (2) Бот флипает creators.published=true; страница читает БД. Публикация = UPDATE, не UI-гэмбл. (3) URL: индекс + /ugc_creators/&lt;slug&gt; на креатора; 301 на 119 tproduct/&lt;uid&gt; через словарь из экспорта uid→креатор. (4) DNS на Railway, бесплатный HTTPS. Усилие 2–3 дня. Загвоздка: теперь твой аптайм + мета-теги, но Railway-сервис ты и так держишь.</p></details>
+</div>
+
+<div class="card"><h2>Что поймал перекрёстный разбор</h2>
+<details><summary>Ключевые пункты рецензий (3 рецензента)</summary>
+<p><b>Сильнейший:</b> в основном Исполнитель (единственный, кто и принимает миграцию, и сводит риск к нулю на существующем стеке) и Аутсайдер (отказ от рамки + развенчание SEO-мифа).</p>
+<p><b>Крупнейшее слепое пятно:</b> Экспансионист — маркетплейс/мэтчинг/комиссии = бизнес-пивот, протащенный под видом миграции, максимум стройки для каталога с неизмеренным трафиком.</p>
+<p><b>Что пропустили ВСЕ:</b> никто не потребовал сперва данных — открыть Search Console/аналитику и посмотреть, ранжируются ли и конвертят ли текущие 119 страниц. Эта единственная дешёвая проверка решает спор до единой строки кода. Также: долгосрочная поддержка нетехническим владельцем, lock-in Tilda, гибрид headless-Tilda.</p>
+</details></div>
+
+<footer>LLM Council · 5 советников + перекрёстный разбор · 2026-07-28 · вопрос: миграция каталога Tilda→код</footer>
+</div></body></html>
