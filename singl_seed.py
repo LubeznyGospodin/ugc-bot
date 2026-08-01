@@ -180,6 +180,23 @@ def save_state(state: dict) -> None:
     STATE.write_text(json.dumps(state, ensure_ascii=False, indent=1))
 
 
+def _merge_sources(new_sources: dict, skipped: list[str]) -> None:
+    """Влить находки ingest в state, не затирая правки параллельного wave.
+
+    ingest идёт десятками минут без общего лока — перечитываем свежий state
+    и добавляем только свои ключи, под коротким локом.
+    """
+    import fcntl
+
+    with (SEED_DIR / ".lock").open("w") as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        st = load_state()
+        st.setdefault("sources", {}).update(new_sources)
+        skip = set(st.setdefault("ingest_skip", [])) | set(skipped)
+        st["ingest_skip"] = sorted(skip)
+        save_state(st)
+
+
 def _acc_key(profile: str, platform: str) -> str:
     return f"{profile}|{platform}"
 
@@ -295,6 +312,8 @@ def ingest() -> None:
     ok_host = ("youtube.com", "youtu.be", "vk.ru", "vk.com", "tiktok.com")
 
     added = 0
+    found: dict[str, list] = {}
+    skipped: list[str] = []
     for v in values[2:]:
         if len(v) < 7 or not str(v[3]).strip().startswith("http"):
             continue
@@ -310,20 +329,28 @@ def ingest() -> None:
             continue
         dst = SEED_DIR / "src" / f"{slug}.mp4"
         if not dst.exists():
-            r = subprocess.run(
-                ["yt-dlp", "-q", "--no-warnings",
-                 "-f", "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/b",
-                 "--merge-output-format", "mp4", "-o", str(dst), url],
-                capture_output=True, text=True, timeout=600)
-            if r.returncode != 0 or not dst.exists():
-                state["ingest_skip"].append(slug)  # битая/приватная ссылка — не долбим
-                print(f"skip {creator}: {r.stderr.strip()[:80]}")
+            try:
+                r = subprocess.run(
+                    ["yt-dlp", "-q", "--no-warnings", "--socket-timeout", "20",
+                     "--retries", "2", "-f", "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/b",
+                     "--merge-output-format", "mp4", "-o", str(dst), url],
+                    capture_output=True, text=True, timeout=180)
+                err = r.stderr.strip()[:80] if r.returncode != 0 else ""
+            except subprocess.TimeoutExpired:
+                err = "таймаут скачивания"  # висящая ссылка не должна ронять весь прогон
+            if err or not dst.exists():
+                skipped.append(slug)  # битая/приватная ссылка — больше не долбим
+                dst.unlink(missing_ok=True)
+                print(f"skip {creator}: {err}", flush=True)
+                _merge_sources(found, skipped)
                 continue
+        found[slug] = [creator, url]
         state.setdefault("sources", {})[slug] = [creator, url]
         added += 1
-        print(f"+ {slug} ← {creator} · {url[:60]}")
-    save_state(state)
-    print(f"новых исходников: {added}, всего: {len(all_sources(state))}")
+        print(f"+ {slug} ← {creator} · {url[:60]}", flush=True)
+        _merge_sources(found, skipped)   # ролик доступен посеву сразу
+    _merge_sources(found, skipped)
+    print(f"новых исходников: {added}, всего: {len(all_sources(load_state()))}")
 
 
 def _grid_dump() -> list[list]:
@@ -685,9 +712,12 @@ if __name__ == "__main__":
     import fcntl
 
     # один процесс за раз: wave/links/stats делают read-modify-write state.json,
-    # параллельный запуск терял записи (29.07 потеряли 2 vk-поста)
-    _lock = (SEED_DIR / ".lock").open("w")
-    fcntl.flock(_lock, fcntl.LOCK_EX)
+    # параллельный запуск терял записи (29.07 потеряли 2 vk-поста).
+    # ingest качает видео десятками минут — его под общим локом не держим,
+    # он мержит свои ключи в state точечно (см. _merge_sources).
+    if sys.argv[1] != "ingest":
+        _lock = (SEED_DIR / ".lock").open("w")
+        fcntl.flock(_lock, fcntl.LOCK_EX)
     {"wave": wave, "plan": lambda: plan_sheet(), "stats": stats, "links": links,
      "daily": daily, "ingest": ingest,
      "scan": lambda: stats(quiet=True)}[sys.argv[1]]()
