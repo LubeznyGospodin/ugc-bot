@@ -320,8 +320,12 @@ def ingest() -> None:
     have = {s for s in all_sources(state) if (SEED_DIR / "src" / f"{s}.mp4").exists()}
     have_urls = {u for s, (_c, u) in all_sources(state).items() if s in have}
     known = have | set(state.setdefault("ingest_skip", []))
-    # IG из РФ не качается (см. HANDOFF), Threads/Likee/Snapchat yt-dlp не берёт
-    ok_host = ("youtube.com", "youtu.be", "vk.ru", "vk.com", "tiktok.com")
+    # IG из РФ не качается (см. HANDOFF), Threads/Likee/Snapchat yt-dlp не берёт.
+    # YouTube с серверных IP отдаёт «Sign in to confirm you're not a bot» —
+    # на Railway его не дёргаем (ролики креаторов почти всегда есть и в VK/TikTok).
+    ok_host = ["vk.ru", "vk.com", "tiktok.com"]
+    if not os.environ.get("SEED_DIR"):        # локально (мак) YouTube качается
+        ok_host += ["youtube.com", "youtu.be"]
 
     added = 0
     found: dict[str, list] = {}
