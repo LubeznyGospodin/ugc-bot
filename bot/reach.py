@@ -315,6 +315,20 @@ def _parse_short_num(s: str) -> int:
         return 0
 
 
+# Ошибки, означающие «ролика больше нет» (удалён/скрыт/приватный), а не разовый сбой сети.
+_GONE_MARKERS = (
+    "не найден", "not found", "404", "deleted", "удал", "unavailable", "недоступ",
+    "does not exist", "video not", "private", "приватн", "removed", "no items",
+    "нет видео", "empty", "пуст",
+)
+
+
+def is_gone(err: str | None) -> bool:
+    """Ошибка говорит, что ролика больше не существует?"""
+    low = (err or "").lower()
+    return any(m in low for m in _GONE_MARKERS)
+
+
 _FETCHERS = {
     "youtube": fetch_youtube,
     "vk": fetch_vk,
@@ -502,6 +516,7 @@ async def reach_run(bot) -> dict:
     now = datetime.utcnow()
     freeze_days = settings.reach_freeze_days
     failed: list[str] = []
+    dead_urls: list[str] = []   # ролики без единого замера, которых больше нет → удалить
     frozen_cnt = 0
     manual_cnt = 0
     prev_map: dict[str, int | None] = {}  # что бот писал в таблицу в ПРОШЛЫЙ раз
@@ -526,9 +541,12 @@ async def reach_run(bot) -> dict:
             row.creator, row.telegram, row.active = creator, tg, True
             # Снимаем ДО фетча: с этим таблица сверит ячейку и поймёт ручную правку.
             prev_map[url] = row.views
-            # Ручной ввод — не парсим совсем (экономим юниты) и не перезаписываем.
             if row.manual:
-                manual_cnt += 1
+                manual_cnt += 1  # парсим ВСЁ РАВНО (значение обновим, если получится)
+            # ФИКСАЦИЯ: охват уже был, но ролик исчез — держим последнюю цифру и
+            # больше не парсим (иначе жжём юниты на покойника).
+            if row.views is not None and is_gone(row.last_error):
+                frozen_cnt += 1
                 continue
             # Заморозка: ролик старше N дней не парсим (экономим юниты), значение остаётся.
             if (now - row.first_seen).days >= freeze_days:
@@ -538,11 +556,28 @@ async def reach_run(bot) -> dict:
             row.platform, row.last_try_at = platform, now
             if views is not None:
                 row.views, row.updated_at, row.last_error = views, now, None
+                row.manual = False  # бот снова ведёт эту строку
             else:
                 row.last_error = err
-                failed.append(f"{platform}: {url[:50]} — {err}")
+                # Данных не было НИКОГДА и ролика не существует → строку удаляем совсем.
+                if row.views is None and is_gone(err):
+                    dead_urls.append(url)
+                else:
+                    failed.append(f"{platform}: {url[:50]} — {err}")
             await asyncio.sleep(2.0 if platform in _SLOW else 0.3)  # EnsembleData не частить
+        # мёртвые ролики без единого замера — вон из БД (и из таблицы, ниже)
+        for u in dead_urls:
+            row = existing.pop(u, None)
+            if row is not None:
+                await s.delete(row)
+                logger.info("reach: %s удалён (ролика не существует)", u[:60])
         await s.commit()
+
+    if dead_urls:  # подчистить те же строки в клиентской таблице
+        try:
+            await sheets_client.reach_delete(settings.reach_sheet_id, dead_urls)
+        except SheetsError as e:
+            logger.warning("reach_delete failed: %s", e)
 
     # Выгрузка в таблицу — отдельным шагом (без обращений к платным API).
     w = await write_reach_sheet(prev_map)

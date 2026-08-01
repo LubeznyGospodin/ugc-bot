@@ -260,6 +260,13 @@ class SheetsClient:
             timeout=long_to,
         )
 
+    async def reach_delete(self, sheet_id: str, urls: list[str]) -> dict[str, Any]:
+        """Удалить строки клиентской таблицы по ссылкам (ролик удалён на площадке)."""
+        long_to = aiohttp.ClientTimeout(total=150, sock_connect=5, sock_read=120)
+        return await self._post(
+            {"action": "reach_delete", "sheet_id": sheet_id, "urls": urls}, timeout=long_to,
+        )
+
     async def profile(self, chat_id: int) -> dict[str, Any] | None:
         """Живой профиль креатора из таблицы по Chat ID (action=profile).
         Apps Script читает строку по колонке «Chat ID» и отдаёт поля по ЗАГОЛОВКАМ

@@ -14,6 +14,7 @@ video.save в сообщество + отложенный wall.post (юзер-т
   Single_pesnya_vpodarok — «Песня в подарок» (pesnya.vpodarok / pesnya_v_podar_ok / @pesnya.vpodarok)
 
 Команды:
+  .venv/bin/python singl_seed.py ingest # новые ролики креаторов из таблицы → src/ (launchd 08:30)
   .venv/bin/python singl_seed.py wave   # спланировать+запостить публикации на сегодня (launchd 09:00)
   .venv/bin/python singl_seed.py plan   # перезаписать лист «План посева» из state
   .venv/bin/python singl_seed.py stats  # просмотры → «Посевы (факт)» + главный лист + ТГ (launchd 20:00)
@@ -25,7 +26,9 @@ video.save в сообщество + отложенный wall.post (юзер-т
 
 import asyncio
 import json
+import random
 import sys
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -90,9 +93,42 @@ def vk_publish(profile: str, path: Path, caption: str, when_iso: str) -> tuple[i
                attachments=f"video-{g}_{vid}", publish_date=ts)
     return vid, post.get("post_id", 0)
 
-# темп: публикаций на аккаунт в день
-RAMP = {"2026-07-29": 2, "2026-07-30": 3, "2026-07-31": 4}
-RAMP_DEFAULT = 5
+# темп: публикаций на аккаунт в день. Разгон каждые 2 дня до потолка 15.
+RAMP = {"2026-07-29": 2, "2026-07-30": 3, "2026-07-31": 4, "2026-08-01": 8,
+        "2026-08-02": 10, "2026-08-03": 10, "2026-08-04": 12, "2026-08-05": 12,
+        "2026-08-06": 14, "2026-08-07": 14}
+RAMP_DEFAULT = 15
+
+# окно публикаций (МСК): равномерно + рандом внутри слота, чтобы выглядело по-людски
+DAY_START_H, DAY_END_H = 8, 23
+# минимальный зазор между постами ОДНОГО аккаунта: чаще — площадки видят спам-паттерн.
+# Если день начат поздно, лучше опубликовать меньше, чем сыпать очередью.
+MIN_GAP_MIN = 35
+
+# человекочитаемые имена аккаунтов для алертов
+HANDLES = {
+    (A, "tiktok"): ("тикток", "@singl.zvuk"),
+    (A, "instagram"): ("инстаграм", "@skazhi_pesney"),
+    (A, "youtube"): ("ютуб", "@skazhi.pesney"),
+    (A, "vk"): ("вк", "Скажи песней"),
+    (B, "tiktok"): ("тикток", "@pesnya.vpodarok"),
+    (B, "instagram"): ("инстаграм", "@pesnya_v_podar_ok"),
+    (B, "youtube"): ("ютуб", "@pesnya.vpodarok"),
+    (B, "vk"): ("вк", "Песня в подарок"),
+}
+BRAND = {A: "Скажи песней", B: "Песня в подарок"}
+
+# подписи для роликов, приехавших от креаторов автоматически (ротация по индексу)
+POOL_CAPTIONS = [
+    "Песня, написанная лично про твоего человека 🎶 #песнявподарок #подарок #сюрприз",
+    "Подарок, который невозможно передарить 🎁 #песнявподарок #идеяподарка #сюрприз",
+    "Когда слова не справляются — включается музыка 🎼 #песнявподарок #подарок #эмоции",
+    "Реакция на песню про себя — бесценна 🥹🎶 #песнявподарок #реакция #сюрприз",
+    "Такое поздравление запомнят навсегда 🎤 #песнявподарок #поздравление #подарок",
+    "Твоя история — в куплете и припеве 🎵 #песнявподарок #подарокдевушке #подарокмаме",
+    "Мурашки вместо очередного сертификата 🎸 #песнявподарок #подарок #мурашки",
+    "Дарим не вещь, а эмоцию 🎶 #песнявподарок #эмоции #идеяподарка",
+]
 
 # исходники: имя файла в src/ → (креатор, ссылка-источник)
 SOURCES = {
@@ -152,62 +188,153 @@ def _ramp(date_s: str) -> int:
     return RAMP.get(date_s, RAMP_DEFAULT)
 
 
-def pick_sources(state: dict, date_s: str) -> list[tuple[str, str, str, str]]:
-    """Жадный латинский квадрат: → [(profile, platform, source, iso_datetime)].
+def all_sources(state: dict) -> dict[str, tuple[str, str]]:
+    """Статичные исходники + приехавшие от креаторов автоматически (ingest)."""
+    merged = dict(SOURCES)
+    merged.update({k: tuple(v) for k, v in state.get("sources", {}).items()})
+    return merged
 
-    Правила: исходник не повторяется на аккаунте; в пределах дня — сначала те,
-    что сегодня ещё не выходили; при прочих равных — наименее использованный.
+
+def caption_for(src: str, state: dict) -> str:
+    """Подпись исходника; для авто-подтянутых — из пула по стабильному индексу."""
+    if src in CAPTIONS:
+        return CAPTIONS[src]
+    pool_i = sum(ord(c) for c in src) % len(POOL_CAPTIONS)
+    return POOL_CAPTIONS[pool_i]
+
+
+def _slot_times(date_s: str, count: int, not_before: datetime, seed_key: str) -> list[datetime]:
+    """count времён, равномерно раскиданных по окну 08:00–23:00 + рандом внутри слота.
+
+    Детерминировано по (дата, аккаунт): повторный прогон не переставляет расписание.
+    Если часть дня прошла — оставшиеся публикации равномерно ложатся в остаток окна.
+    """
+    day0 = datetime.strptime(date_s, "%Y-%m-%d")
+    lo = max(day0.replace(hour=DAY_START_H), not_before)
+    hi = day0.replace(hour=DAY_END_H)
+    if lo >= hi:  # день уже кончился — переносим на утро следующего
+        day0 += timedelta(days=1)
+        lo, hi = day0.replace(hour=DAY_START_H), day0.replace(hour=DAY_END_H)
+    span = (hi - lo).total_seconds()
+    fit = max(1, int(span // (MIN_GAP_MIN * 60)))  # сколько влезет без спам-очереди
+    if fit < count:
+        print(f"{seed_key}: в остаток дня влезает {fit} из {count} (зазор {MIN_GAP_MIN} мин)")
+        count = fit
+    step = span / count
+    rnd = random.Random(f"{date_s}|{seed_key}")
+    return [lo + timedelta(seconds=step * k + rnd.uniform(0, step * 0.8))
+            for k in range(count)]
+
+
+def pick_sources(state: dict, date_s: str) -> list[tuple[str, str, str, str]]:
+    """План публикаций на день → [(profile, platform, source, iso_datetime)].
+
+    Правила: исходник не повторяется на аккаунте, пока есть неиспользованные;
+    когда свежие кончились — реюз наименее использованного (кап 10 копий),
+    без повтора на аккаунте в один день.
     """
     hist = state.setdefault("acct_hist", {})
     day = state.setdefault("days", {}).setdefault(date_s, {})
+    sources = all_sources(state)
     global_use: dict[str, int] = {}
     for used in hist.values():
         for s in used:
             global_use[s] = global_use.get(s, 0) + 1
     used_today = set(day.get("_sources", []))
 
-    now = datetime.now()
+    exists = {s for s in sources if (SEED_DIR / "src" / f"{s}.mp4").exists()}
     target = _ramp(date_s)
-    plan = []
-    for k in range(target):
-        for idx, (profile, platform) in enumerate(ACCOUNTS):
-            key = _acc_key(profile, platform)
-            if day.get(key, 0) + sum(1 for p in plan if p[0] == profile and p[1] == platform) >= target - 0:
-                continue
-            done = day.get(key, 0)
-            slot_i = done + sum(1 for p in plan if p[0] == profile and p[1] == platform)
-            if slot_i > k:
-                continue
-            if slot_i != k:
-                continue
-            today_on_acct = {p[2] for p in plan if p[0] == profile and p[1] == platform}
-            cands = [s for s in SOURCES if s not in hist.get(key, [])
-                     and (SEED_DIR / "src" / f"{s}.mp4").exists()]
+    # кап уникализаций на исходник: базово 10, но если база мала — поднимаем, иначе
+    # план дня физически не выполнить (ingest подтягивает новые ролики креаторов)
+    cap = max(10, -(-3 * target * len(ACCOUNTS) // max(len(exists), 1)))
+    not_before = datetime.now() + timedelta(minutes=25)  # запас на аплоад
+    plan: list[tuple[str, str, str, str]] = []
+
+    for profile, platform in ACCOUNTS:
+        key = _acc_key(profile, platform)
+        done = day.get(key, 0)
+        need = target - done
+        if need <= 0:
+            continue
+        times = _slot_times(date_s, target, not_before, key)[done:]
+        picked: list[str] = []
+        for when in times:
+            seen_acct = set(hist.get(key, [])) | set(picked)
+            cands = [s for s in exists if s not in seen_acct]
             if cands:
                 cands.sort(key=lambda s: (s in used_today, global_use.get(s, 0)))
-            else:
-                # исходники на аккаунте закончились — реюз: оригиналы мы не постим,
-                # каждая публикация всё равно свежая уникализация; кап 10 копий/исходник
-                acct_use = {s: hist.get(key, []).count(s) for s in SOURCES}
-                cands = [s for s in SOURCES if (SEED_DIR / "src" / f"{s}.mp4").exists()
-                         and global_use.get(s, 0) < 10 and s not in today_on_acct]
+            else:  # реюз: публикуем свежую уникализацию, оригинал не постим никогда
+                acct_use = {s: hist.get(key, []).count(s) + picked.count(s) for s in exists}
+                cands = [s for s in exists if global_use.get(s, 0) < cap and s not in picked]
                 cands.sort(key=lambda s: (acct_use[s], s in used_today, global_use.get(s, 0)))
             if not cands:
-                print(f"{key}: база исчерпана (кап 10 копий) — слот {k + 1} пропущен")
-                continue
+                print(f"{key}: база исходников исчерпана (кап 10 копий)")
+                break
             src = cands[0]
-            # слоты равномерно по дню 10:30–20:30 (утро/день/вечер при любом темпе):
-            # N=2 → 10:30, 20:30; N=3 → 10:30, 15:30, 20:30; N=5 → каждые 2.5ч.
-            # +12 мин сдвига на аккаунт; прошедшее время двигаем вперёд от «сейчас»
-            step_h = 10 / max(target - 1, 1)
-            when = datetime.strptime(date_s, "%Y-%m-%d").replace(hour=10, minute=30) \
-                + timedelta(hours=step_h * k, minutes=12 * idx)
-            if when < now + timedelta(minutes=30):
-                when = now + timedelta(minutes=35 + 12 * idx + 90 * slot_i)
-            plan.append((profile, platform, src, when.strftime("%Y-%m-%dT%H:%M:00+03:00")))
+            picked.append(src)
             used_today.add(src)
             global_use[src] = global_use.get(src, 0) + 1
+            plan.append((profile, platform, src, when.strftime("%Y-%m-%dT%H:%M:00+03:00")))
+    plan.sort(key=lambda p: p[3])
     return plan
+
+
+def ingest() -> None:
+    """Новые ролики креаторов из таблицы → скачать в src/ и подключить к посеву.
+
+    Оригиналы НЕ публикуем — они лишь становятся сырьём для уникализаций,
+    чтобы визуально разнообразить ленту посевных аккаунтов.
+    """
+    import re
+    import subprocess
+
+    state = load_state()
+    values = _grid_dump()
+    known = set(all_sources(state)) | set(state.setdefault("ingest_skip", []))
+    # IG из РФ не качается (см. HANDOFF), Threads/Likee/Snapchat yt-dlp не берёт
+    ok_host = ("youtube.com", "youtu.be", "vk.ru", "vk.com", "tiktok.com")
+
+    added = 0
+    for v in values[2:]:
+        if len(v) < 7 or not str(v[3]).strip().startswith("http"):
+            continue
+        creator, url = str(v[1]).strip(), str(v[3]).strip()
+        if creator.startswith("Посев") or "посев" in str(v[6]).lower():
+            continue  # наш же посев — не сырьё
+        if not any(h in url for h in ok_host):
+            continue
+        if any(url == u for _, u in all_sources(state).values()):
+            continue
+        slug = "c" + re.sub(r"\W", "", url)[-14:].lower()
+        if slug in known:
+            continue
+        dst = SEED_DIR / "src" / f"{slug}.mp4"
+        if not dst.exists():
+            r = subprocess.run(
+                ["yt-dlp", "-q", "--no-warnings",
+                 "-f", "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/b",
+                 "--merge-output-format", "mp4", "-o", str(dst), url],
+                capture_output=True, text=True, timeout=600)
+            if r.returncode != 0 or not dst.exists():
+                state["ingest_skip"].append(slug)  # битая/приватная ссылка — не долбим
+                print(f"skip {creator}: {r.stderr.strip()[:80]}")
+                continue
+        state.setdefault("sources", {})[slug] = [creator, url]
+        added += 1
+        print(f"+ {slug} ← {creator} · {url[:60]}")
+    save_state(state)
+    print(f"новых исходников: {added}, всего: {len(all_sources(state))}")
+
+
+def _grid_dump() -> list[list]:
+    """Главный лист reach-таблицы целиком (с ретраями на флаки Apps Script)."""
+    for _ in range(3):
+        r = requests.post(WEBHOOK, json={"secret": SECRET, "action": "grid_dump",
+                                         "sheet_id": SHEET_ID}, timeout=120)
+        if r.status_code == 200 and r.text.startswith("{"):
+            return r.json()["values"]
+        time.sleep(5)
+    raise RuntimeError("grid_dump не ответил")
 
 
 def seed_write(rows: list[dict]) -> None:
@@ -215,8 +342,6 @@ def seed_write(rows: list[dict]) -> None:
 
     Apps Script изредка флачит 404 на POST — ретраим до 3 раз.
     """
-    import time
-
     if not rows:
         return
     for attempt in range(3):
@@ -275,13 +400,16 @@ def wave() -> None:
     print(f"{date_s}: к отправке {len(plan)} публикаций")
     day = state["days"][date_s]
     for profile, platform, src, when in plan:
-        copy = f"{src}_{SHORT[profile]}_{platform[:2]}_{date_s[5:].replace('-', '')}.mp4"
+        n = 1 + sum(1 for c in state.get("published", {}) if c.startswith(f"{src}_"))
+        copy = f"{src}_{SHORT[profile]}_{platform[:2]}_{date_s[5:].replace('-', '')}_{n}.mp4"
         dst = SEED_DIR / "out" / copy
         if not dst.exists():
             meta = probe(str(SEED_DIR / "src" / f"{src}.mp4"))
+            # max_quality: исходное разрешение и fps, CRF 16-18 — площадки режут охват
+            # низкому разрешению, поэтому качество не жмём
             asyncio.run(uniquify(str(SEED_DIR / "src" / f"{src}.mp4"), str(dst),
-                                 meta, preset="strong", mirror=False))
-        caption = CAPTIONS.get(src, next(iter(CAPTIONS.values())))
+                                 meta, preset="strong", mirror=False, max_quality=True))
+        caption = caption_for(src, state)
         if platform == "vk":
             try:
                 vid, post_id = vk_publish(profile, dst, caption, when)
@@ -352,10 +480,10 @@ def plan_sheet(state: dict | None = None) -> None:
     pub = state.get("published", {})
     for copy, info in sorted(pub.items(), key=lambda kv: kv[1]["when"]):
         src = info.get("src") or copy.split("_")[0]
-        creator, url = SOURCES.get(src, ("", ""))
+        creator, url = all_sources(state).get(src, ("", ""))
         plats = info.get("platform") or "TikTok+IG+YouTube"
         rows.append([info["when"].replace("T", " ")[:16], info["profile"], plats,
-                     copy, f"{creator} · {url}", CAPTIONS.get(src, ""), "⏰ запланирован"])
+                     copy, f"{creator} · {url}", caption_for(src, state), "⏰ запланирован"])
     r = requests.post(WEBHOOK, json={
         "secret": SECRET, "action": "grid_write", "sheet_id": SHEET_ID,
         "sheet_name": "План посева", "clear": True, "row": 1, "rows": rows,
@@ -363,8 +491,52 @@ def plan_sheet(state: dict | None = None) -> None:
     print("план:", r.status_code, r.text[:120])
 
 
-def stats() -> None:
-    """Просмотры всех постов обоих профилей → «Посевы (факт)» + главный лист + ТГ."""
+def check_zero_accounts(state: dict, rows: list[list]) -> None:
+    """Аккаунт опубликовал вчера ролики и получил 0 просмотров → капслок-алерт.
+
+    Порог 3 ролика: один-два нуля бывают из-за задержки счётчика площадки.
+    Один алерт на аккаунт в сутки (state.alerted).
+    """
+    yest = (datetime.now() - timedelta(days=1)).date()
+    alerted = state.setdefault("alerted", {}).setdefault(yest.isoformat(), [])
+
+    def posted_on(ts, day) -> bool:
+        """Пост опубликован в этот день (МСК)? ts — unix или ISO-UTC."""
+        if ts in (None, ""):
+            return False
+        s = str(ts)
+        dt = (datetime.fromtimestamp(float(s)) if s.replace(".", "").isdigit()
+              else datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
+              + timedelta(hours=3))
+        return dt.date() == day
+
+    for (profile, platform) in ACCOUNTS:
+        key = f"{profile}|{platform}"
+        if key in alerted:
+            continue
+        acct_rows = [r for r in rows if r[1] == profile and r[2] == platform]
+        y_rows = [r for r in acct_rows if posted_on(r[8] if len(r) > 8 else None, yest)]
+        cnt = len(y_rows)
+        if cnt < 3:  # мало данных — молчим, счётчики площадок отстают
+            continue
+        if sum(int(r[5] or 0) for r in y_rows) > 0:
+            continue
+        acct_total = sum(int(r[5] or 0) for r in acct_rows)
+        net, handle = HANDLES.get((profile, platform), (platform, profile))
+        _tg_send(
+            f'СИНГЛ НЕ НАБИРАЕТ!!! АККАУНТ - "{BRAND[profile]}" ({net}) "{handle}" - '
+            f"просмотры за вчера 0 на {cnt} роликах. Всего охватов с канала: {acct_total}"
+        )
+        alerted.append(key)
+        print(f"АЛЕРТ: {key} — 0 просмотров на {cnt} роликах")
+    save_state(state)
+
+
+def stats(quiet: bool = False) -> None:
+    """Просмотры всех постов обоих профилей → главный лист + алерты (+ТГ-сводка).
+
+    quiet=True — тихий прогон между отчётами: цифры и алерты, без вечерней сводки.
+    """
     from papkids_uploadpost import analytics, media
 
     state = load_state()
@@ -393,7 +565,7 @@ def stats() -> None:
                 totals[profile] += int(views or 0)
                 by_plat[platform] = by_plat.get(platform, 0) + int(views or 0)
                 rows.append([today, profile, platform, p["id"], p.get("permalink") or "",
-                             views, likes, comments])
+                             views, likes, comments, p.get("ts")])
     # VK: только НАШИ залитые видео (state.vk_videos) — креаторские клипы в этих же
     # сообществах уже считает бот, иначе задвоим охват
     if VK_TOKEN:
@@ -410,7 +582,8 @@ def stats() -> None:
                     totals[profile] += int(views)
                     by_plat["vk"] = by_plat.get("vk", 0) + int(views)
                     rows.append([today, profile, "vk", it["id"],
-                                 f"https://vk.com/video-{g}_{it['id']}", views, likes, 0])
+                                 f"https://vk.com/video-{g}_{it['id']}", views, likes, 0,
+                                 it.get("date")])
             except Exception as e:  # noqa: BLE001
                 print(f"vk stats {profile}: {e}")
 
@@ -424,6 +597,8 @@ def stats() -> None:
     seen.update(f"{r[2]}:{r[3]}" for r in rows)
     state["seen_posts"] = sorted(seen)
 
+    check_zero_accounts(state, rows)
+
     total = sum(totals.values())
     prev = (state.get("_stats") or {}).get("total", 0)
     delta = f" (+{total - prev} за сутки)" if prev else ""
@@ -436,12 +611,8 @@ def stats() -> None:
             f"Постов собрано: {len([r for r in rows if r and r[0] == today])}")
     state["_stats"] = {"date": today, "total": total}
     save_state(state)
-    # отчёт — в личку админу через @ugc_radarbot (НЕ в чат звонков!)
-    tok, chat = ENV.get("SINGL_REPORT_BOT"), ENV.get("SINGL_SEED_CHAT_ID", "357892821")
-    if tok and chat:
-        requests.post(f"https://api.telegram.org/bot{tok}/sendMessage",
-                      data={"chat_id": chat, "text": text,
-                            "disable_web_page_preview": "true"}, timeout=60)
+    if not quiet:  # отчёт — в личку админу через @ugc_radarbot (НЕ в чат звонков!)
+        _tg_send(text)
     print(text)
 
 
@@ -455,15 +626,7 @@ def _tg_send(text: str) -> None:
 
 def daily() -> None:
     """Утренний сводный отчёт по кампании (launchd 10:10, после reach_run 10:00)."""
-    import time
-
-    for _ in range(3):  # Apps Script изредка флачит 404
-        r = requests.post(WEBHOOK, json={"secret": SECRET, "action": "grid_dump",
-                                         "sheet_id": SHEET_ID}, timeout=120)
-        if r.status_code == 200 and r.text.startswith("{"):
-            break
-        time.sleep(5)
-    values = r.json()["values"][2:]  # строки 1-2 — сводка/шапка
+    values = _grid_dump()[2:]  # строки 1-2 — сводка/шапка
 
     def num(v):
         try:
@@ -526,4 +689,5 @@ if __name__ == "__main__":
     _lock = (SEED_DIR / ".lock").open("w")
     fcntl.flock(_lock, fcntl.LOCK_EX)
     {"wave": wave, "plan": lambda: plan_sheet(), "stats": stats, "links": links,
-     "daily": daily}[sys.argv[1]]()
+     "daily": daily, "ingest": ingest,
+     "scan": lambda: stats(quiet=True)}[sys.argv[1]]()
