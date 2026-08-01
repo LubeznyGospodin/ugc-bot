@@ -103,6 +103,8 @@ RAMP = {"2026-07-29": 2, "2026-07-30": 3, "2026-07-31": 4, "2026-08-01": 8,
         "2026-08-02": 10, "2026-08-03": 10, "2026-08-04": 12, "2026-08-05": 12,
         "2026-08-06": 14, "2026-08-07": 14}
 RAMP_DEFAULT = 15
+# TikTok жёстче остальных к частым заливкам — свой лимит, вне общей рампы
+PER_PLATFORM_CAP = {"tiktok": 2}
 
 # окно публикаций (МСК): равномерно + рандом внутри слота, чтобы выглядело по-людски
 DAY_START_H, DAY_END_H = 8, 23
@@ -274,11 +276,12 @@ def pick_sources(state: dict, date_s: str) -> list[tuple[str, str, str, str]]:
 
     for profile, platform in ACCOUNTS:
         key = _acc_key(profile, platform)
+        acct_target = min(target, PER_PLATFORM_CAP.get(platform, target))
         done = day.get(key, 0)
-        need = target - done
+        need = acct_target - done
         if need <= 0:
             continue
-        times = _slot_times(date_s, target, not_before, key)[done:]
+        times = _slot_times(date_s, acct_target, not_before, key)[done:]
         picked: list[str] = []
         for when in times:
             seen_acct = set(hist.get(key, [])) | set(picked)
