@@ -315,7 +315,11 @@ def ingest() -> None:
 
     state = load_state()
     values = _grid_dump()
-    known = set(all_sources(state)) | set(state.setdefault("ingest_skip", []))
+    # «Известный» = ФАЙЛ лежит на диске. Иначе после переезда на новый том
+    # (Railway volume) state помнит ролики, которых физически нет, и посев пуст.
+    have = {s for s in all_sources(state) if (SEED_DIR / "src" / f"{s}.mp4").exists()}
+    have_urls = {u for s, (_c, u) in all_sources(state).items() if s in have}
+    known = have | set(state.setdefault("ingest_skip", []))
     # IG из РФ не качается (см. HANDOFF), Threads/Likee/Snapchat yt-dlp не берёт
     ok_host = ("youtube.com", "youtu.be", "vk.ru", "vk.com", "tiktok.com")
 
@@ -330,10 +334,8 @@ def ingest() -> None:
             continue  # наш же посев — не сырьё
         if not any(h in url for h in ok_host):
             continue
-        if any(url == u for _, u in all_sources(state).values()):
-            continue
         slug = "c" + re.sub(r"\W", "", url)[-14:].lower()
-        if slug in known:
+        if url in have_urls or slug in known:
             continue
         dst = SEED_DIR / "src" / f"{slug}.mp4"
         if not dst.exists():
