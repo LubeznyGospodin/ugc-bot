@@ -18,6 +18,7 @@
 
 import asyncio
 import logging
+import os
 import time
 import traceback
 from datetime import datetime, timedelta, timezone
@@ -102,9 +103,36 @@ def _due(now: datetime, done: list[str]) -> list[str]:
     return out
 
 
+async def _force_task() -> None:
+    """Ручной прогон задачи в облаке: env SEED_FORCE=wave (можно через запятую).
+
+    Один раз в сутки на задачу — иначе рестарт контейнера с той же переменной
+    запустил бы волну повторно и наплодил дублей.
+    """
+    names = [n.strip() for n in os.environ.get("SEED_FORCE", "").split(",") if n.strip()]
+    if not names:
+        return
+    today = datetime.now(MSK).strftime("%Y-%m-%d")
+    for name in names:
+        st = S.load_state()
+        mark = f"forced:{name}"
+        if mark in st.setdefault("worker_done", {}).setdefault(today, []):
+            log.info("force %s: уже гоняли сегодня — пропуск", name)
+            continue
+        st["worker_done"][today].append(mark)
+        S.save_state(st)
+        log.info("→ FORCE %s", name)
+        try:
+            await asyncio.to_thread(TASKS[name])
+            log.info("✓ FORCE %s", name)
+        except Exception:  # noqa: BLE001
+            log.error("✗ FORCE %s:\n%s", name, traceback.format_exc()[:1200])
+
+
 async def main() -> None:
     _bootstrap_state()
     clean()  # хвосты от упавшей волны — до первой задачи, иначе снова «no space»
+    await _force_task()
     have = len(list((S.SEED_DIR / "src").glob("*.mp4")))
     log.info("seed_worker запущен, SEED_DIR=%s, исходников=%d", S.SEED_DIR, have)
     if have < 10:  # пустой/новый volume — наполняем базу сразу, не ждём слота
