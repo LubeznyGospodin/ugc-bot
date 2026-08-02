@@ -64,11 +64,12 @@ PLAN: dict[str, list[tuple[int, list[str]]]] = {
     ],
     "tt": [
         (1, ["оформить профиль: аватар, ник, био", "больше НИЧЕГО не делать"]),
-        (3, ["скролл 20–30 мин, ролики ДОСМАТРИВАТЬ до конца", "5–10 лайков в своей нише",
-             "3–5 подписок"]),
+        (3, ["скролл 20–30 мин: смотреть по-настоящему, интересное — до конца",
+             "5–10 лайков в своей нише", "3–5 подписок"]),
         (6, ["скролл 20 мин", "10 лайков", "3–5 подписок", "2–3 комментария",
              "поиск по 2–3 нишевым запросам"]),
-        (999, ["скролл 15–20 мин с досмотром", "10–15 лайков", "3–5 подписок", "1–2 комментария",
+        (999, ["скролл 15–20 мин, смотреть по-настоящему (не пролистывать механически)",
+               "10–15 лайков", "3–5 подписок", "1–2 комментария",
                "ответить на ВСЕ комментарии под нашими роликами"]),
     ],
     "yt": [
@@ -110,7 +111,7 @@ RULES = (
 
 # ── Хранилище ─────────────────────────────────────────────────────────────────
 async def _load() -> dict:
-    empty = {"accounts": [], "done": {}, "audit": {}, "synced": ""}
+    empty = {"accounts": [], "done": {}, "audit": {}, "synced": "", "ack": []}
     raw = await _get_state(STATE_KEY)
     if not raw:
         return empty
@@ -469,6 +470,37 @@ async def run_warmup_loop(bot: Bot, interval: int = 600) -> None:
 # ── Хендлеры ──────────────────────────────────────────────────────────────────
 def _allowed(user_id: int) -> bool:
     return settings.is_admin(user_id) or user_id == ASSISTANT_ID
+
+
+ACK_BUTTON = InlineKeyboardMarkup(
+    inline_keyboard=[[InlineKeyboardButton(text="✅ Принято!", callback_data="wu:ack")]]
+)
+
+
+@router.callback_query(F.data == "wu:ack")
+async def wu_ack(call: CallbackQuery, bot: Bot):
+    """«Принято!» под инструкцией креатору → отчёт о прочтении админам в личку."""
+    await call.answer("Принято, спасибо! 🌿")
+    try:
+        await call.message.edit_reply_markup(reply_markup=None)
+    except Exception:  # noqa: BLE001 — сообщение могли уже поправить
+        pass
+    st = await _load()
+    acked = st.setdefault("ack", [])
+    if call.from_user.id in acked:
+        return  # повторное нажатие админов не дёргаем
+    acked.append(call.from_user.id)
+    await _save(st)
+    tg = f" @{call.from_user.username}" if call.from_user.username else ""
+    for admin_id in settings.admin_ids:
+        try:
+            await bot.send_message(
+                admin_id,
+                f"📖 <b>{call.from_user.full_name}</b>{tg} прочитала инструкцию по прогреву "
+                f"({len(acked)} из 5)",
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("ack notify to %s failed: %s", admin_id, e)
 
 
 @router.callback_query(F.data.startswith("wu:d:"))

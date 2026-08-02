@@ -65,15 +65,15 @@ def build_data():
     wbv = dump("WB · ROI")[1:]
     def col(i):
         return sum(r[i] for r in wbv if len(r) > i and isinstance(r[i], (int, float)))
-    try:                                   # периоды загруженных отчётов WB — подпись под воронкой
-        per = sorted({str(r[0]) for r in dump("WB отчёты")[1:] if r and r[0]})
+    try:                                   # период данных WB — подпись под воронкой
+        per = sorted({str(r[8]) for r in dump("WB запросы")[1:] if len(r) > 8 and r[8]})
     except Exception:
         per = []
     return {"posts": len(rows), "total": total, "plat": dict(plat), "cre": dict(cre),
             "sku": dict(sorted(sku.items(), key=lambda kv: -kv[1])), "daily": dict(sorted(daily.items())),
             "top": [{"v": t[0], "c": t[1], "p": t[2], "u": t[3], "t": t[4]} for t in top[:5]],
-            "wb": {"per": col(3), "ord": col(4), "buy": col(5), "rev": col(6),
-                   "cart": col(7), "period": ", ".join(per)}}
+            "wb": {"per": col(3), "cart": col(4), "ord": col(5), "rev": col(6),
+                   "period": ", ".join(per)}}
 
 
 def render(data):

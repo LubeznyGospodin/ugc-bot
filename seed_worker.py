@@ -55,13 +55,13 @@ CATCH_UP_MIN = 90
 
 
 def clean() -> None:
-    """Удалить уникализированные копии старше суток.
+    """Удалить уникализированные копии старше 2 часов.
 
-    В max_quality копия весит ~30 МБ: 60+ публикаций/день это ~2 ГБ, а том 5 ГБ.
-    Копия нужна только до заливки (она происходит в день волны), поэтому сутки —
-    достаточный запас.
+    Копия нужна только до момента заливки (wave удаляет её сразу после успеха),
+    так что здесь подчищаем лишь хвосты от упавших попыток. Держать их сутки
+    нельзя: 02.08 том 5 ГБ забился и волна встала на «No space left on device».
     """
-    cutoff = time.time() - 86400
+    cutoff = time.time() - 2 * 3600
     freed = 0
     for f in (S.SEED_DIR / "out").glob("*.mp4"):
         if f.stat().st_mtime < cutoff:
@@ -104,6 +104,7 @@ def _due(now: datetime, done: list[str]) -> list[str]:
 
 async def main() -> None:
     _bootstrap_state()
+    clean()  # хвосты от упавшей волны — до первой задачи, иначе снова «no space»
     have = len(list((S.SEED_DIR / "src").glob("*.mp4")))
     log.info("seed_worker запущен, SEED_DIR=%s, исходников=%d", S.SEED_DIR, have)
     if have < 10:  # пустой/новый volume — наполняем базу сразу, не ждём слота

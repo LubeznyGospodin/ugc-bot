@@ -82,6 +82,11 @@ async def main() -> None:
 
     asyncio.create_task(run_single_loop(bot))
 
+    # Отложенные рассылки по базе (задания в БД, проверка раз в минуту).
+    from bot.scheduler import run_scheduler
+
+    asyncio.create_task(run_scheduler(bot))
+
     # Эксплуатация: пинг внешнего монитора (алерт, если хостинг встал) + напоминания об оплате.
     from bot.ops import run_ops_loop
 

@@ -25,7 +25,8 @@ REPORTS = "WB отчёты"
 ROI = "WB · ROI"
 # колонки отчёта WB → наши поля (ищем по названию шапки, порядок у WB может меняться)
 COLS = {"ww": "Подменный артикул", "name": "Наименование", "clicks": "Перешли в карточку",
-        "cart": "Положили в корзину", "orders": "Заказали товаров", "fav": "Добавили в избранное"}
+        "cart": "Положили в корзину", "orders": "Заказали товаров", "fav": "Добавили в избранное",
+        "nm": "Артикул WB"}     # nmID — по нему тянем воронку карточки из WB API
 PERIOD_RE = re.compile(r"(\d{2})_(\d{2})_(\d{4})[—\-](\d{2})_(\d{2})_(\d{4})")
 
 
@@ -55,22 +56,23 @@ def read_report(path):
         num = lambda k: r[idx[k]] if isinstance(r[idx[k]], (int, float)) else 0   # noqa: E731
         out.append({"ww": ww, "name": str(r[idx["name"]] or "").strip(),
                     "clicks": num("clicks"), "cart": num("cart"),
-                    "orders": num("orders"), "fav": num("fav")})
+                    "orders": num("orders"), "fav": num("fav"), "nm": num("nm")})
     return out
 
 
 def push_reports(rows, period):
     """Лист «WB отчёты»: свои строки за этот период заменяем, чужие периоды не трогаем."""
-    head = ["Период", "Артикул", "Товар", "Переходы", "В корзину", "Заказы", "Избранное", "Загружено"]
+    head = ["Период", "Артикул", "Товар", "Переходы", "В корзину", "Заказы", "Избранное",
+            "Загружено", "Артикул WB"]
     try:
         old = _webhook({"action": "grid_dump", "sheet_name": REPORTS}).get("values", [])[1:]
     except Exception:
         old = []
-    keep = [list(r[:8]) for r in old if r and r[0] and str(r[0]) != period]
+    keep = [list(r[:9]) + [""] * max(0, 9 - len(r)) for r in old if r and r[0] and str(r[0]) != period]
     for r in keep:                       # дата загрузки после дампа приходит ISO-строкой
-        r[7] = pp._iso_to_serial(r[7]) if len(r) > 7 else ""
+        r[7] = pp._iso_to_serial(r[7])
     fresh = [[period, r["ww"], TOVAR.get(r["ww"]) or r["name"], r["clicks"], r["cart"],
-              r["orders"], r["fav"], pp.NOW] for r in rows]
+              r["orders"], r["fav"], pp.NOW, r["nm"]] for r in rows]
     _webhook({"action": "grid_write", "sheet_name": REPORTS, "clear": True, "row": 1,
               "rows": [head] + keep + fresh})
     return len(keep), len(fresh)
@@ -84,7 +86,6 @@ def push_roi(rows):
     except Exception:
         cur = []
     cur = [r for r in cur if r and str(r[0]).startswith("WW")]
-    manual = {str(r[0]): (r[5] if len(r) > 5 else "", r[6] if len(r) > 6 else "") for r in cur}
     names = dict(TOVAR)
     for r in cur:                                  # артикулы, уже заведённые в листе
         names.setdefault(str(r[0]), str(r[1]) if len(r) > 1 else "")
@@ -94,15 +95,20 @@ def push_roi(rows):
     for r in cur:
         clicks.setdefault(str(r[0]), r[3] if len(r) > 3 and isinstance(r[3], (int, float)) else 0)
     order = sorted(names, key=lambda w: (-clicks.get(w, 0), w))
-    head = ["Артикул", "Товар", "Σ охват", "Переходы", "Заказы", "Выкупы", "Выручка, ₽",
-            "В корзину", "Избранное"]
+    head = ["Артикул", "Товар", "Σ охват", "Переходы", "В корзину", "Заказы",
+            "Выручка по заказам, ₽ (оценка)", "Избранное"]
+    # Считаем ЗАКАЗЫ (заказ ≠ выкуп: выкуп — когда товар забрали на ПВЗ).
+    # Выручки по заказам WB в разрезе запроса не отдаёт → оцениваем: заказы × средний чек карточки.
     out = []
     for i, ww in enumerate(order):
         r = i + 2
-        sumif = lambda col: f"=SUMIF('{REPORTS}'!$B:$B;$A{r};'{REPORTS}'!{col}:{col})"  # noqa: E731
-        buy, rev = manual.get(ww, ("", ""))
+        # переходы/корзина/заказы — из «WB запросов» (поисковый отчёт API: считает и переходы
+        # в соседние карточки по тому же коду, кабинет их не показывает)
+        q = lambda col: f"=IFERROR(VLOOKUP($A{r};'WB запросы'!$A:$F;{col};0);0)"      # noqa: E731
         out.append([ww, names[ww], f"=SUMIF('Посты'!G:G;$A{r};'Посты'!F:F)",
-                    sumif("D"), sumif("F"), buy, rev, sumif("E"), sumif("G")])
+                    q(4), q(5), q(6),
+                    f"=IFERROR(ROUND($F{r}*VLOOKUP($A{r};'WB карточки'!$C:$K;9;0));0)",
+                    f"=SUMIF('{REPORTS}'!$B:$B;$A{r};'{REPORTS}'!G:G)"])
     _webhook({"action": "grid_write", "sheet_name": ROI, "clear": True, "row": 1, "rows": [head] + out})
     return len(out)
 

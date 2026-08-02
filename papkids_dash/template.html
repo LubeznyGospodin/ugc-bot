@@ -95,7 +95,7 @@ footer .scr{font-family:var(--script);font-size:19px;color:var(--sage);}
       <div class="tag">считаем каждый просмотр с заботой 🌿</div>
     </div>
     <div class="meta">
-      <span class="pill"><span class="dot"></span> обновляется каждые 6 часов</span>
+      <span class="pill"><span class="dot"></span> обновляется каждое утро</span>
       <span class="pill gold">__STAMP__</span>
     </div>
   </div>
@@ -175,13 +175,12 @@ const stages=[
   {nm:'Охваты', s:'просмотры', v:D.total, txt:fmt(D.total), conv:'охват на пост', cb:fmt(Math.round(D.total/D.posts))},
   {nm:'Переходы', s:'клики на WB', v:wb.per||null, txt:wb.per?fmt(wb.per):'ждём WB', conv:'CTR', cb:wb.per?pct(wb.per,D.total):'—'},
   {nm:'В корзину', s:'положили', v:wb.cart||null, txt:wb.cart?fmt(wb.cart):'ждём WB', conv:'из перехода', cb:wb.cart?pct(wb.cart,wb.per):'—'},
-  {nm:'Заказы', s:'оформили', v:wb.ord||null, txt:wb.ord?fmt(wb.ord):'ждём WB', conv:'из корзины', cb:wb.ord?pct(wb.ord,wb.cart):'—'},
-  {nm:'Выкупы', s:'получили', v:wb.buy||null, txt:wb.buy?fmt(wb.buy):'ждём WB', conv:'выкупаемость', cb:wb.buy?pct(wb.buy,wb.ord):'—'},
-  {nm:'Выручка', s:'деньги', v:wb.rev||null, txt:wb.rev?fmt(wb.rev)+' ₽':'ждём WB', conv:'средний чек', cb:(wb.rev&&wb.buy)?fmt(Math.round(wb.rev/wb.buy))+' ₽':'—'},
+  {nm:'Заказы', s:'оформили на WB', v:wb.ord||null, txt:wb.ord?fmt(wb.ord):'ждём WB', conv:'из корзины', cb:wb.ord?pct(wb.ord,wb.cart):'—'},
+  {nm:'Выручка', s:'по заказам', v:wb.rev||null, txt:wb.rev?fmt(wb.rev)+' ₽':'ждём WB', conv:'средний чек', cb:(wb.rev&&wb.ord)?fmt(Math.round(wb.rev/wb.ord))+' ₽':'—'},
 ];
 document.getElementById('funnote').innerHTML = wb.per
-  ? `<span class="cl">📊 отчёт WB · ${wb.period||'период не указан'}</span> переходы, корзина и заказы — по подменным артикулам #WW. Выкупы и выручку добавим из отчёта о продажах.`
-  : `<span class="cl">☁️ Переходы · Заказы · Выкупы · Выручка</span> появятся из кабинета WB — связка через артикулы #WW уже стоит в каждой подписи.`;
+  ? `<span class="cl">📊 данные WB · ${wb.period||'период не указан'}</span> переходы, корзина и заказы — по поисковым запросам с нашими артикулами #WW: зритель ищет код из ролика на WB. Считаем заказы (выкуп — это уже получение товара на ПВЗ). Выручка — оценка: заказы × средний чек карточки.`
+  : `<span class="cl">☁️ Переходы · Корзина · Заказы · Выручка</span> появятся из кабинета WB — связка через артикулы #WW уже стоит в каждой подписи.`;
 const fEl=document.getElementById('funnel');
 stages.forEach((st,i)=>{
   const w = st.v===null ? 34 : Math.max(18, 100 - i*13);

@@ -7,6 +7,12 @@
   выборочный аудит скрином в 15:00, отчёт админам в 20:00. Команды `/wu`, `/wu_add`,
   `/wu_del`, `/wu_push`. Состояние — JSON в `AppState` (`warmup_state`).
 - `ASSISTANT_ID` в конфиге (дефолт 1197101122).
+- Ростер прогрева читается из листа «Аккаунты» рабочей таблицы через `grid_dump`
+  (`SheetsClient.grid_dump`, `ACCOUNTS_SHEET_ID`, `WARMUP_PROJECTS`). Ручные `/wu_add`
+  и `/wu_del` удалены, единица учёта — аккаунт, фаза считается от «Даты создания».
+- Разбор выгрузок данных аккаунта (Instagram DYI / TikTok / Google Takeout): ассистент
+  присылает архив файлом → счётчики событий по дням → вердикт Claude → отчёт админам.
+  Добавлены `anthropic` в requirements и `ANTHROPIC_API_KEY` в конфиг.
 
 ---
 

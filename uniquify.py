@@ -80,8 +80,10 @@ def build_command(src: str, dst: str, meta: dict, seed: int | None = None,
     dur = meta["duration"]
 
     # кап выхода: >1080p жрёт память на хостинге (OOM), площадки всё равно пережмут
+    # Даже в max_quality держим потолок Full HD: площадки всё равно отдают ≤1080p,
+    # а 4K-копия весит сотни МБ (переполняли том) и кодируется в разы дольше.
     out_w, out_h = w, h
-    if max(w, h) > 1920 and not max_quality:
+    if max(w, h) > 1920:
         f = 1920 / max(w, h)
         out_w, out_h = int(w * f) // 2 * 2, int(h * f) // 2 * 2
 

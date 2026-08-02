@@ -70,7 +70,10 @@ A = "Single1_skazhi_pesney"
 B = "Single_pesnya_vpodarok"
 SHORT = {A: "SP", B: "PV"}
 LABEL = {A: "Посев · Скажи песней", B: "Посев · Песня в подарок"}
-ACCOUNTS = [(p, pl) for p in (A, B) for pl in ("tiktok", "instagram", "youtube", "vk")]
+_PLATFORMS = ["tiktok", "instagram", "youtube"]
+if os.environ.get("SINGL_VK_ENABLED", "1") == "1":
+    _PLATFORMS.append("vk")   # 02.08: VK забанил аккаунт-админа → выключаемо флагом
+ACCOUNTS = [(p, pl) for p in (A, B) for pl in _PLATFORMS]
 
 # VK — напрямую (юзер-токен админа сообществ, бессрочный): video.save + отложенный wall.post
 VK_TOKEN = ENV.get("SINGL_VK_USER", "")
@@ -83,6 +86,9 @@ def _vk(method: str, **params):
     if "error" in r:
         raise RuntimeError(f"{method}: {r['error'].get('error_msg')}")
     return r["response"]
+
+
+VK_ENABLED = ENV.get("SINGL_VK_ENABLED", "1") == "1"
 
 
 def vk_publish(profile: str, path: Path, caption: str, when_iso: str) -> tuple[int, int]:
@@ -374,7 +380,10 @@ def _grid_dump() -> list[list]:
         r = requests.post(WEBHOOK, json={"secret": SECRET, "action": "grid_dump",
                                          "sheet_id": SHEET_ID}, timeout=120)
         if r.status_code == 200 and r.text.startswith("{"):
-            return r.json()["values"]
+            body = r.json()
+            if "values" in body:
+                return body["values"]
+            print("grid_dump:", str(body)[:150])  # ok:false / чужая ошибка — ретраим
         time.sleep(5)
     raise RuntimeError("grid_dump не ответил")
 
@@ -458,6 +467,7 @@ def wave() -> None:
                 print(f"{copy} -> {profile}/vk @{when}: FAIL {e}")
                 continue
             print(f"{copy} -> {profile}/vk @{when}: video-{VK_GROUPS[profile]}_{vid}, отложка {post_id}")
+            dst.unlink(missing_ok=True)  # залито — копия больше не нужна
             key = _acc_key(profile, platform)
             day[key] = day.get(key, 0) + 1
             day.setdefault("_sources", []).append(src)
@@ -502,6 +512,7 @@ def wave() -> None:
             print("ЛИМИТ АПЛОАДОВ — стоп")
             break
         if r.status_code in (200, 202):
+            dst.unlink(missing_ok=True)  # залито — копия больше не нужна (том 5 ГБ)
             key = _acc_key(profile, platform)
             day[key] = day.get(key, 0) + 1
             day.setdefault("_sources", []).append(src)
@@ -598,8 +609,17 @@ def stats(quiet: bool = False) -> None:
                 try:
                     m = analytics(profile, platform, p["id"])
                 except Exception as e:
-                    print(f"{profile}/{platform}/{p['id']}: analytics failed: {e}")
-                    m = {}
+                    if "429" in str(e):  # Instagram лимитит серию запросов
+                        time.sleep(20)
+                        try:
+                            m = analytics(profile, platform, p["id"])
+                        except Exception:
+                            print(f"{profile}/{platform}/{p['id']}: 429 и после паузы")
+                            m = {}
+                    else:
+                        print(f"{profile}/{platform}/{p['id']}: analytics failed: {e}")
+                        m = {}
+                time.sleep(0.4)  # не долбим API очередью в 100 постов
                 views = m.get("views") or m.get("video_views") or m.get("plays") or m.get("reach") or 0
                 likes = m.get("likes") or m.get("like_count") or 0
                 comments = m.get("comments") or m.get("comments_count") or 0
