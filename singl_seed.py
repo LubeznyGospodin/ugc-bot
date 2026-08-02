@@ -28,6 +28,7 @@ import asyncio
 import json
 import os
 import random
+import re
 import sys
 import time
 from datetime import datetime, timedelta
@@ -91,9 +92,26 @@ def _vk(method: str, **params):
 VK_ENABLED = ENV.get("SINGL_VK_ENABLED", "1") == "1"
 
 
+_EMOJI = re.compile(
+    "[\U0001F000-\U0001FAFF\U00002190-\U000021FF\U00002300-\U000023FF"
+    "\U00002600-\U000027BF\U0000FE00-\U0000FE0F\U00002B00-\U00002BFF\U0000200D]+"
+)
+
+
+def no_emoji(s: str) -> str:
+    """Описание клипа без эмодзи.
+
+    VK Реклама не даёт продвигать клип, если в заголовке есть эмодзи
+    («Невозможно продвигать»), а video.edit для клипов отвечает Internal server
+    error — то есть поправить постфактум нельзя, только публиковать сразу чистым.
+    """
+    return re.sub(r"\s{2,}", " ", _EMOJI.sub("", s or "")).strip()
+
+
 def vk_publish(profile: str, path: Path, caption: str, when_iso: str) -> tuple[int, int]:
     """Залить видео в сообщество и поставить отложенный пост на стену. → (video_id, post_id)."""
     g = VK_GROUPS[profile]
+    caption = no_emoji(caption)          # иначе клип нельзя будет продвигать
     up = _vk("video.save", group_id=g, name=caption.split("#")[0].strip()[:100],
              description=caption)
     with path.open("rb") as fh:
