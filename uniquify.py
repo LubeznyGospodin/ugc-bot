@@ -162,7 +162,9 @@ def build_command(src: str, dst: str, meta: dict, seed: int | None = None,
         fps_out = rnd.choice([29.97, 30.0])
     cmd += [
         "-c:v", "libx264",
-        "-preset", "slow" if max_quality else "veryfast",
+        # preset влияет на РАЗМЕР файла, а не на картинку при фиксированном CRF:
+        # medium даёт то же качество втрое быстрее slow (важно для пачек копий)
+        "-preset", "medium" if max_quality else "veryfast",
         "-crf", str(rnd.randint(16, 18) if max_quality else rnd.randint(20, 24)),
         "-pix_fmt", "yuv420p",
         "-r", f"{fps_out:.3f}",
