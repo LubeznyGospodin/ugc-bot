@@ -42,6 +42,10 @@ DB_URL = (json.load(open(f"{SP}/vars_pg.json"))["DATABASE_PUBLIC_URL"]
           .split("?")[0].replace("postgres://", "postgresql://"))
 
 BUCKET = "packman"
+
+# Карточки, которые не показываем на сайте, хотя в БД они одобрены.
+# 752020860 — «Валерий Г»: в анкете мужское имя, а на всех кадрах девушка.
+HIDDEN: set[int] = {752020860}
 PUBLIC_BASE = "https://24dcb37f-27c8-4dd8-84f9-6fe3e085d5df.selstorage.ru"
 
 _s3 = boto3.client(
@@ -192,6 +196,7 @@ async def fetch_placed() -> list[dict]:
     rows = await c.fetch("""
         select tg_id, full_name, city, age, categories, channel_msg_id
         from creators where placement = 'placed' order by created_at desc""")
+    rows = [r for r in rows if r["tg_id"] not in HIDDEN]
     out = []
     for r in rows:
         phs = await c.fetch("select file_id from creator_photos where tg_id=$1 and kind='photo'"
