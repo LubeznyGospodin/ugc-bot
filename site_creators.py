@@ -46,6 +46,10 @@ BUCKET = "packman"
 # Карточки, которые не показываем на сайте, хотя в БД они одобрены.
 # 752020860 — «Валерий Г»: в анкете мужское имя, а на всех кадрах девушка.
 HIDDEN: set[int] = {752020860}
+
+# Имя для сайта, когда в анкете оно записано задом наперёд или с опечаткой.
+# В БД не правим: её ведёт бот, и там имя связано с постом в канале и таблицей.
+RENAME: dict[int, str] = {5221880749: "Кристина Щедрина"}
 PUBLIC_BASE = "https://24dcb37f-27c8-4dd8-84f9-6fe3e085d5df.selstorage.ru"
 
 _s3 = boto3.client(
@@ -224,11 +228,14 @@ async def main() -> None:
     taken: set[str] = set()
     items = []
     for cr in creators:
-        name, tg = cr["full_name"], cr["tg_id"]
+        tg = cr["tg_id"]
+        name = RENAME.get(tg, cr["full_name"])
         if not cr["file_ids"]:
             print(f"  ! {name} — нет фото, пропуск")
             continue
-        prefix = media_prefix(name, tg)
+        # путь к медиа считаем по имени из БД: переименование на витрине
+        # не должно приводить к повторной заливке тех же файлов
+        prefix = media_prefix(cr["full_name"], tg)
         try:
             photos = push_photos(prefix, cr["file_ids"])
             videos = push_videos(prefix, cr["works"], vlimit) if vlimit else []
