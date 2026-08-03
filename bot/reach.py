@@ -601,18 +601,25 @@ async def reach_run(bot) -> dict:
 
 
 async def run_reach_loop(bot, interval: int = 900) -> None:
-    """Раз в сутки (~10:00 МСК) собирает охваты и пишет клиентскую таблицу."""
+    """Раз в сутки собирает охваты и пишет клиентскую таблицу.
+
+    Час прогона — REACH_HOUR (по умолчанию 10:00 МСК). Сдвигаем переменной, когда
+    отчёт нужен раньше; флаг reach_run_date держит один прогон в сутки, чтобы не
+    жечь лимиты ScrapeCreators повторным заходом.
+    """
     import asyncio
+    import os
     from datetime import datetime
 
     from bot.single import MSK, _get_state, _set_state
 
+    hour = int(os.getenv("REACH_HOUR", "10"))
     await asyncio.sleep(120)
     while True:
         try:
             now_msk = datetime.utcnow() + MSK
             today = now_msk.date().isoformat()
-            if now_msk.hour >= 10 and await _get_state("reach_run_date") != today:
+            if now_msk.hour >= hour and await _get_state("reach_run_date") != today:
                 res = await reach_run(bot)
                 if res.get("ok"):
                     await _set_state("reach_run_date", today)
